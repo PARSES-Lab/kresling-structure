@@ -10,6 +10,7 @@ N = 6 #Number of Kresling polygon faces
 alpha = math.pi*45/180
 L1 = 4
 makeBase = 1 #Make the base of the Kresling? (Boolean)
+makeMirror = 1 #Attach a mirrored Kresling structure? (Boolean)
 
 gamma = math.pi/N
 P = R/math.sin(gamma) #Redefine R so that the dimensions are correct for center of Kresling polygon to one polygon angle
@@ -141,6 +142,28 @@ def makeKreslingBody(cPlanes,lofts,P,N,t,L1,alpha,makeBase):
 
     return bodyList
 
+def mirrorKreslingBody(cPlaneList,KreslingList,mirrorFeatList,L1):
+    # Create construction mirror plane
+    mirrorPlane = CreateOffsetPlane(cPlaneList,L1)
+
+    # Mirror every body in Kresling
+    for i in range(len(KreslingList)):
+        # Get one lofted body
+        loftBody = KreslingList[i]
+
+        # Create input entity for mirror feature
+        inputEntities = adsk.core.ObjectCollection.create()
+        inputEntities.add(loftBody)
+        
+        # Create input for mirror feature
+        mirrorInput = mirrorFeatList.createInput(inputEntities, mirrorPlane)
+
+        # Create mirror feature
+        mirrorFeat = mirrorFeatList.add(mirrorInput)
+
+    return mirrorFeatList
+
+
 
 ##### Main code #####
 
@@ -150,13 +173,18 @@ ui = app.userInterface
 doc = app.documents.add(adsk.core.DocumentTypes.FusionDesignDocumentType)
 design = app.activeProduct
 
-# Create sketch, construction plane, loft, and pattern objects
+# Create sketch, construction plane, loft, mirror, and pattern objects
 rootComp = design.rootComponent
 sketchObjs = rootComp.sketches
 cPlaneObjs = rootComp.constructionPlanes
 loftFeats = rootComp.features.loftFeatures
+mirrorFeats = rootComp.features.mirrorFeatures
 
-##Make Kresling structure
+# Make Kresling structure
 Kresling = makeKreslingBody(cPlaneObjs,loftFeats,P,N,t,L1,alpha,makeBase)
+
+# Make mirrored Kresling structure
+if makeMirror == 1:
+    mirrorFeats = mirrorKreslingBody(cPlaneObjs,Kresling,mirrorFeats,L1)
 
 
