@@ -12,6 +12,7 @@ N = 6 #Number of Kresling polygon faces
 alpha = 12 #angle in degrees
 L1 = 2.5 #Uncompressed length/height
 makeBase = 0 #Make the base of the Kresling? (Boolean)
+makeMirror = 1 #Attach a mirrored Kresling structure? (Boolean)
 
 #Hinge and wall thicknesses
 hingeT = t
@@ -25,6 +26,13 @@ def PolygonPoints(N,offsetAngle,xAxis):
 
     pgonPts = [math.cos((2*k*math.pi/N)-offsetAngle-xAxis) for k in range(N)]
     return pgonPts 
+
+def CreateOffsetPlane(cPlanes,offsetWidth):
+    offsetPlane = cPlanes.createInput()
+    offset = adsk.core.ValueInput.createByString(str(offsetWidth)+'cm')
+    offsetPlane.setByOffset(rootComp.xYConstructionPlane, offset)
+    planeName = cPlanes.add(offsetPlane)
+    return planeName
 
 def genSketch(pX,pY,pZ):
     #Generalized sketch from point list in X, Y, Z
@@ -171,6 +179,27 @@ def makeKreslingBody(cPlanes,lofts,R0,R1,R2,N,L1,alpha,makeBase):
 
     return bodyList
 
+def mirrorKreslingBody(cPlaneList,KreslingList,mirrorFeatList,L1):
+    # Create construction mirror plane
+    mirrorPlane = CreateOffsetPlane(cPlaneList,L1)
+
+    # Mirror every body in Kresling
+    for i in range(len(KreslingList)):
+        # Get one lofted body
+        loftBody = KreslingList[i]
+
+        # Create input entity for mirror feature
+        inputEntities = adsk.core.ObjectCollection.create()
+        inputEntities.add(loftBody)
+        
+        # Create input for mirror feature
+        mirrorInput = mirrorFeatList.createInput(inputEntities, mirrorPlane)
+
+        # Create mirror feature
+        mirrorFeat = mirrorFeatList.add(mirrorInput)
+
+    return mirrorFeatList
+
 ##### Main code #####
 
 # Create Fusion document 
@@ -184,12 +213,17 @@ rootComp = design.rootComponent
 sketchObjs = rootComp.sketches
 cPlaneObjs = rootComp.constructionPlanes
 loftFeats = rootComp.features.loftFeatures
+mirrorFeats = rootComp.features.mirrorFeatures
 
 #Define Kresling properties
 alpha = (math.pi/180)*alpha
 
 ##Make Kresling structure
 Kresling = makeKreslingBody(cPlaneObjs,loftFeats,R,R-hingeT,R-wallT,N,L1,alpha,makeBase)
+
+# Make mirrored Kresling structure
+if makeMirror == 1:
+    mirrorFeats = mirrorKreslingBody(cPlaneObjs,Kresling,mirrorFeats,L1)
 
 
 
