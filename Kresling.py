@@ -10,7 +10,8 @@ N = 6 #Number of Kresling polygon faces
 alpha = math.pi*45/180
 L1 = 4
 makeBase = 1 #Make the base of the Kresling? (Boolean)
-makeMirror = 1 #Attach a mirrored Kresling structure? (Boolean)
+makeChambers = 1 #Make the chambers of the Kresling? (Boolean)
+makeMirror = 0 #Attach a mirrored Kresling structure? (Boolean)
 
 gamma = math.pi/N
 P = R/math.sin(gamma) #Redefine R so that the dimensions are correct for center of Kresling polygon to one polygon angle
@@ -138,31 +139,116 @@ def makeKreslingBody(cPlanes,lofts,P,N,t,L1,alpha,makeBase):
         loftLid = AddLoftFeature(lofts,[KLid0,KLid1])
     
         bodyKLid = loftLid.bodies.item(0)
+        bodyKLid.name = 'Base'
         bodyList.append(bodyKLid)    
 
     return bodyList
 
-def mirrorKreslingBody(cPlaneList,KreslingList,mirrorFeatList,L1):
+def mirrorKreslingBody(cPlaneList,sketchList,KreslingList,mirrorFeatList,L1):
+    # Create list of bodies
+    bodyList = []
+    
     # Create construction mirror plane
     mirrorPlane = CreateOffsetPlane(cPlaneList,L1)
+    sketchList.add(mirrorPlane)
 
     # Mirror every body in Kresling
-    for i in range(len(KreslingList)):
-        # Get one lofted body
-        loftBody = KreslingList[i]
+    for i in range(len(KreslingList)): 
+        if KreslingList[i].name != 'Base': # Do not mirror the base
+            # Get one body
+            body = KreslingList[i]
 
-        # Create input entity for mirror feature
-        inputEntities = adsk.core.ObjectCollection.create()
-        inputEntities.add(loftBody)
-        
-        # Create input for mirror feature
-        mirrorInput = mirrorFeatList.createInput(inputEntities, mirrorPlane)
+            # Create input entity for mirror feature
+            inputEntities = adsk.core.ObjectCollection.create()
+            inputEntities.add(body)
+            
+            # Create input for mirror feature
+            mirrorInput = mirrorFeatList.createInput(inputEntities, mirrorPlane)
 
-        # Create mirror feature
-        mirrorFeat = mirrorFeatList.add(mirrorInput)
+            # Create mirror feature
+            mirrorFeat = mirrorFeatList.add(mirrorInput)
+            bodyList.append(mirrorFeat.bodies.item(0))
 
     return mirrorFeatList
 
+def circularPatternBodies(circularList,bodiesPattern,numPattern,degPattern):
+    # Define axis to pattern around
+    patternAxis = rootComp.zConstructionAxis
+
+    # Define bodies to pattern
+    inputEntities = adsk.core.ObjectCollection.create()
+    for i in range(len(bodiesPattern)):
+        inputEntities.add(bodiesPattern[i])
+
+    # Create input entity for circular pattern feature
+    circularFeatInput = circularList.createInput(inputEntities, patternAxis)
+
+    # Define parameters of circular pattern
+    circularFeatInput.quantity = adsk.core.ValueInput.createByString(str(numPattern))
+    circularFeatInput.totalAngle = adsk.core.ValueInput.createByString(str(degPattern)+' deg')
+    circularFeatInput.isSymmetric = False
+
+    # Create circular pattern
+    circularFeat = circularList.add(circularFeatInput)
+
+    # Return bodies
+    bodyList = []
+    for i in range(len(circularFeat.bodies)):
+        bodyList.append(circularFeat.bodies.item(i))
+
+    return bodyList
+
+def createChamber(cPlaneList,sketchList,extrudeList,P,t,N,alpha,L1,circularList):
+    # Define top and lower parts of chamber wall
+    chamPlane = CreateOffsetPlane(cPlaneList,0)
+    chamLProfile = sketchList.add(chamPlane)
+    chamUProfile = sketchList.add(chamPlane)
+    
+    # Lower and upper internal Kresling triangle points
+    pLIX = PolygonPoints((P-t),N,0,1)
+    pUIX = PolygonPoints((P-t),N,alpha,1)
+    pLIY = PolygonPoints((P-t),N,0,0)
+    pUIY = PolygonPoints((P-t),N,alpha,0)
+
+    # Define the points of wall profile
+    cP0 = adsk.core.Point3D.create(0, 0, 0)
+    cP1 = adsk.core.Point3D.create(pLIX[0], pLIY[0], 0)
+    cP2 = adsk.core.Point3D.create(pUIX[0], pUIY[0], L1)
+    cP3 = adsk.core.Point3D.create(0, 0, L1)
+
+    # Connect points of top wall into a profile
+    wallLPolygon = chamLProfile.sketchCurves.sketchLines
+    wallLPolygon.addByTwoPoints(cP0,cP1)
+    wallLPolygon.addByTwoPoints(cP1,cP2)
+    wallLPolygon.addByTwoPoints(cP2,cP0)
+    wallLProfile = chamLProfile.profiles.item(0)
+
+    # Connect points of bottom wall into a profile
+    wallUPolygon = chamUProfile.sketchCurves.sketchLines
+    wallUPolygon.addByTwoPoints(cP0,cP2)
+    wallUPolygon.addByTwoPoints(cP2,cP3)
+    wallUPolygon.addByTwoPoints(cP3,cP0)
+    wallUProfile = chamUProfile.profiles.item(0)
+
+    # Extrude lower wall
+    distance = adsk.core.ValueInput.createByString(str(t)+'cm')
+    isFullLength = True
+    extrudeLInput = extrudeList.createInput(wallLProfile,adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
+    extrudeLInput.setSymmetricExtent(distance,isFullLength)
+    extrudeLWall = extrudeList.add(extrudeLInput)
+    chamberLBody = extrudeLWall.bodies.item(0)
+
+    # Extrude upper wall
+    extrudeUInput = extrudeList.createInput(wallUProfile,adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
+    extrudeUInput.setSymmetricExtent(distance,isFullLength)
+    extrudeUWall = extrudeList.add(extrudeUInput)
+    chamberUBody = extrudeUWall.bodies.item(0)
+
+    # Circular pattern chamber wall
+    chamberBodies = [chamberLBody,chamberUBody]
+    chamberBodies = chamberBodies + circularPatternBodies(circularList,chamberBodies,N/2,360)
+    
+    return chamberBodies
 
 
 ##### Main code #####
@@ -179,12 +265,18 @@ sketchObjs = rootComp.sketches
 cPlaneObjs = rootComp.constructionPlanes
 loftFeats = rootComp.features.loftFeatures
 mirrorFeats = rootComp.features.mirrorFeatures
+extrudeFeats = rootComp.features.extrudeFeatures
+circularFeats = rootComp.features.circularPatternFeatures
 
 # Make Kresling structure
 Kresling = makeKreslingBody(cPlaneObjs,loftFeats,P,N,t,L1,alpha,makeBase)
 
+# Make chamber walls
+if makeChambers == 1:
+    Kresling = Kresling + createChamber(cPlaneObjs,sketchObjs,extrudeFeats,P,t,N,alpha,L1,circularFeats)
+
 # Make mirrored Kresling structure
 if makeMirror == 1:
-    mirrorFeats = mirrorKreslingBody(cPlaneObjs,Kresling,mirrorFeats,L1)
+    Kresling = Kresling + mirrorKreslingBody(cPlaneObjs,sketchObjs,Kresling,mirrorFeats,L1)
 
 
