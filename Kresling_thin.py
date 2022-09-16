@@ -6,32 +6,34 @@ What are the inputs and what are the outputs (and how do you get them)
 '''
 #Kristen L. Dorsey
 #K.Dorsey@northeastern.edu
-
+# Could add comment here about what adsk is
 import adsk.core, adsk.fusion, adsk.cam
 import math
 
 #Kresling dimensions
-R = 1 #Radius of Kresling "polygon" in cm
-t = 0.1 #Thickness of the Kresling face in cm 
-N = 6 #Number of Kresling polygon faces
-alpha = 12 #angle in degrees
-L1 = 2.5 #Uncompressed length/height
-makeBase = 0 #Make the base of the Kresling? (Boolean)
+'''
+These come from paper blah, the relationship of the variables is blah
+Default measurement from autodesk libraries is in cm
+'''
+radius = 1
+wall_thickness = 0.1 
+# Making the hinges thinner makes the Kresling module fold the way we want it to
+hinge_thickness = wall_thickness/3
+base_thickness = 0 
+number_polygon_edges = 6 
+angle_btw_kresling_polygons = 12 
+neutral_module_length = 2.5 
 
-#Hinge and wall thicknesses
-hingeT = t
-wallT = 3*t
-
-def PolygonPoints(N,offsetAngle,xAxis):
+def generate_polygon_points(number_of_kresling_edges, wall_thickness_offset_angle, xAxis):
     #Generate the polygon points for a Kresling polygon. By convention, bottom face should be alpha = 0. 
-    # Offset is +/- phi for the orthogonal points
-    #Create N points in X or Y
-    #subtracting pi/2 (xAxis val) translates from cos to sin to get Y axis value
 
-    pgonPts = [math.cos((2*k*math.pi/N)-offsetAngle-xAxis) for k in range(N)]
-    return pgonPts 
+    polygon_points = \
+        [math.cos((2 * k * math.pi / number_of_kresling_edges) - wall_thickness_offset_angle - xAxis) \
+        for k in range(number_of_kresling_edges)]
+	
+    return polygon_points 
 
-def genSketch(pX,pY,pZ):
+def gen_sketch(pX,pY,pZ):
     #Generalized sketch from point list in X, Y, Z
     newSketch = sketchObjs.add(rootComp.xYConstructionPlane)
 
