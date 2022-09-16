@@ -1,4 +1,9 @@
-
+'''
+What does this code do?
+Where do the equations come from? 
+How to run this piece of code
+What are the inputs and what are the outputs (and how do you get them)
+'''
 #Kristen L. Dorsey
 #K.Dorsey@northeastern.edu
 
