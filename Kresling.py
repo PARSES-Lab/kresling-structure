@@ -3,7 +3,14 @@ Kris Dorsey
 K.Dorsey@Northeastern.edu
 Kristen@Kristendorsey.com
 This script is run from Autodesk Fusion 360 scripts and add ons interface
+
 The sizing and equations come from Kaufman and Li 2021
+Mapping from Kaufman to variables here
+alpha -> top_rotation_angle
+phi -> 
+R -> radius
+L1 -> height
+N -> number_polygon_edges
 '''
 
 # adsk are libraries for Python Fusion API
@@ -16,24 +23,14 @@ radius = 1
 wall_thickness = 0.1 
 height = 2.5
 number_polygon_edges = 6 
-top_rotation_angle = 12 
-
-ratio_hinge_to_wall = 1
+top_rotation_angle = 12
+ratio_hinge_to_wall = 0.5
 ratio_base_to_wall = 0
+
 hinge_thickness = wall_thickness * ratio_hinge_to_wall
 base_thickness = wall_thickness * ratio_base_to_wall
 
-'''
-Mapping from Kaufman to variables here
-alpha -> top_rotation_angle
-phi -> 
-R -> radius
-L1 -> height
-N -> number_polygon_edges
-'''
-
 def generate_polygon_points(number_of_kresling_edges, offset_angle, sine_rotation):
-
     polygon_points = \
         [math.cos((2 * k * math.pi / number_of_kresling_edges) - offset_angle - sine_rotation) \
         for k in range(number_of_kresling_edges)]
@@ -90,7 +87,7 @@ def paramKresling(radius, points_x, points_y, points_z):
     KreslingProfileP = gen_sketch(points_x_parameterized, points_y_parameterized, points_z)
     return KreslingProfileP
 
-def makeKreslingBody(cPlanes,lofts, radius, wall_thickness, hinge_thickness, number_polygon_edges, height, top_rotation_angle, base_thickness):
+def makeKreslingBody(lofts, radius, wall_thickness, hinge_thickness, number_polygon_edges, height, top_rotation_angle, base_thickness):
     #Create each Kresling triangle according to specified dimensions
 
     bodyList = [] #Make an empty body list to append new bodies to
@@ -104,10 +101,10 @@ def makeKreslingBody(cPlanes,lofts, radius, wall_thickness, hinge_thickness, num
     upper_y = generate_polygon_points(number_polygon_edges, top_rotation_angle, math.pi/2)
 
     #Create point lists for orthogonal Kresling points to make thinner angles
-    orthogonal_x_neg = generate_polygon_points(number_polygon_edges, -phi, 0) 
-    orthogonal_x_pos = generate_polygon_points(number_polygon_edges, phi, 0)
-    orthogonal_y_neg = generate_polygon_points(number_polygon_edges, -phi, math.pi/2)
-    orthogonal_y_pos = generate_polygon_points(number_polygon_edges, phi, math.pi/2)
+    orthogonal_x_neg = generate_polygon_points(number_polygon_edges, phi, 0) 
+    orthogonal_x_pos = generate_polygon_points(number_polygon_edges, -phi, 0)
+    orthogonal_y_neg = generate_polygon_points(number_polygon_edges, phi, math.pi/2)
+    orthogonal_y_pos = generate_polygon_points(number_polygon_edges, -phi, math.pi/2)
    
     #Interleave two lists of points
     orthogonal_x_lower = [val for pair in zip(orthogonal_x_neg, orthogonal_x_pos) for val in pair]
@@ -118,10 +115,10 @@ def makeKreslingBody(cPlanes,lofts, radius, wall_thickness, hinge_thickness, num
 
     #Create point lists for orthogonal Kresling points to make thinner angles
     #may have flipped the sign here
-    orthogonal_x_neg = generate_polygon_points(number_polygon_edges, -phi + top_rotation_angle , 0) 
-    orthogonal_x_pos = generate_polygon_points(number_polygon_edges, phi + top_rotation_angle , 0)
-    orthogonal_y_neg = generate_polygon_points(number_polygon_edges, -phi + top_rotation_angle , math.pi/2)
-    orthogonal_y_pos = generate_polygon_points(number_polygon_edges, phi + top_rotation_angle , math.pi/2)
+    orthogonal_x_neg = generate_polygon_points(number_polygon_edges, phi + top_rotation_angle , 0) 
+    orthogonal_x_pos = generate_polygon_points(number_polygon_edges, -phi + top_rotation_angle , 0)
+    orthogonal_y_neg = generate_polygon_points(number_polygon_edges, phi + top_rotation_angle , math.pi/2)
+    orthogonal_y_pos = generate_polygon_points(number_polygon_edges, -phi + top_rotation_angle , math.pi/2)
    
     #Interleave two lists of points
     orthogonal_x_upper = [val for pair in zip(orthogonal_x_neg, orthogonal_x_pos) for val in pair]
@@ -199,7 +196,7 @@ loftFeats = rootComp.features.loftFeatures
 top_rotation_angle = (math.pi/180)*top_rotation_angle
 
 ##Make Kresling structure
-Kresling = makeKreslingBody(cPlaneObjs,loftFeats, radius , wall_thickness, hinge_thickness, number_polygon_edges, height , top_rotation_angle, base_thickness)
+Kresling = makeKreslingBody(loftFeats, radius , wall_thickness, hinge_thickness, number_polygon_edges, height , top_rotation_angle, base_thickness)
 
 
 
