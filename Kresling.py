@@ -24,7 +24,7 @@ wall_thickness = 0.1
 height = 2.5
 number_polygon_edges = 6 
 top_rotation_angle = 12
-ratio_hinge_to_wall = 0.5
+ratio_hinge_to_wall = 0.3
 ratio_base_to_wall = 0
 
 hinge_thickness = wall_thickness * ratio_hinge_to_wall
