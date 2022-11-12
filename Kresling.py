@@ -23,12 +23,15 @@ radius = 1
 wall_thickness = 0.1 
 height = 2.5
 number_polygon_edges = 6 
-top_rotation_angle = 12
+top_rotation_angle = 12 
 ratio_hinge_to_wall = 0.3
 ratio_base_to_wall = 0
 
 hinge_thickness = wall_thickness * ratio_hinge_to_wall
 base_thickness = wall_thickness * ratio_base_to_wall
+
+inner_angle = math.pi / number_polygon_edges
+edge_length = radius / math.sin(inner_angle)
 
 def generate_polygon_points(number_of_kresling_edges, offset_angle, sine_rotation):
     polygon_points = \
@@ -91,7 +94,6 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
     #Create each Kresling triangle according to specified dimensions
 
     body_list = [] #Make an empty body list to append new bodies to
-    inner_angle = math.pi / number_polygon_edges
 
     #Create point lists for Kresling triangle points
     #nomenclature: point Lower/Upper External/Internal X/Y
@@ -192,11 +194,8 @@ sketchObjs = rootComp.sketches
 cPlaneObjs = rootComp.constructionPlanes
 loftFeats = rootComp.features.loftFeatures
 
-#Convert rotation angles to radians
-top_rotation_angle = (math.pi/180)*top_rotation_angle
 
-inner_angle = math.pi / number_polygon_edges
-edge_length = radius / math.sin(inner_angle)
+
 
 ##Make Kresling structure
-Kresling = make_Kresling_body(loftFeats, edge_length , wall_thickness, hinge_thickness, number_polygon_edges, height , top_rotation_angle, inner_angle, base_thickness)
+Kresling = make_Kresling_body(loftFeats, edge_length , wall_thickness, hinge_thickness, number_polygon_edges, height , top_rotation_angle * (math.pi/180), inner_angle, base_thickness)
