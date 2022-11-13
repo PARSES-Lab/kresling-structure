@@ -1,146 +1,174 @@
-#Kristen L. Dorsey, Northeastern University
+'''
+Kris Dorsey
+K.Dorsey@Northeastern.edu
+Kristen@Kristendorsey.com
+This script is run from Autodesk Fusion 360 scripts and add ons interface
+The sizing and equations come from Kaufman and Li 2021
+Mapping from Kaufman to variables here
+alpha -> top_rotation_angle
+R -> radius
+P -> edge_length
+L1 -> height
+N -> number_polygon_edges
+phi -> half_inner_angle
+'''
 
+# adsk are libraries for Python Fusion API
 import adsk.core, adsk.fusion, adsk.cam
 import math
 
-#Kresling dimensions
-R = 1 #Length of Kresling polygon face
-t = 0.05 #Thickness of the Kresling in cm 
-N = 6 #Number of Kresling polygon faces
-alpha = math.pi*45/180
-L1 = 4
-makeBase = 1 #Make the base of the Kresling? (Boolean)
+#Kresling dimensions 
+# all in cm
+edge_length = 2.5
+height = 2.5
+number_polygon_edges = 6 
+top_rotation_angle = 12 
+wall_thickness = 0.1 
 
-gamma = math.pi/N
-P = R/math.sin(gamma) #Redefine R so that the dimensions are correct for center of Kresling polygon to one polygon angle
+#Kresling ratios
+hinge_proportion = 0.1
+ratio_hinge_to_wall = 0.4
+ratio_base_to_wall = 0
 
-def PolygonPoints(P,N,alpha,X):
-    #Generate the polygon points for top or bottom face. By convention, bottom face should be alpha = 0
-    #Create N points in X or Y
+#Calculate hinge and base thicknesses from ratios
+hinge_thickness = wall_thickness * ratio_hinge_to_wall
+base_thickness = wall_thickness * ratio_base_to_wall
 
-    for k in range(N):
-        if X==1:
-            outerPts = [P*math.cos((2*k*math.pi/N)-alpha) for k in range(N)]
-        else:
-            outerPts = [P*math.sin((2*k*math.pi/N)-alpha) for k in range(N)]
+radius = edge_length * (2 * math.sin( math.pi / number_polygon_edges ))
 
-    return outerPts
+def generate_polygon_points(number_of_kresling_edges, offset_angle, sine_rotation):
+    polygon_points = \
+        [math.cos((2 * k * math.pi / number_of_kresling_edges) - offset_angle - sine_rotation) \
+        for k in range(number_of_kresling_edges)]
+	
+    return polygon_points 
 
-def CreateOffsetPlane(cPlanes,offsetWidth):
-    offsetPlane = cPlanes.createInput()
-    offset = adsk.core.ValueInput.createByString(str(offsetWidth)+'cm')
-    offsetPlane.setByOffset(rootComp.xYConstructionPlane, offset)
-    planeName = cPlanes.add(offsetPlane)
-    return planeName
+def generate_hinge_points(number_of_kresling_edges, offset_angle, sine_rotation, hinge_proportion):
+    shift_angle = offset_angle + sine_rotation
+    half_inner_angle = math.pi / number_of_kresling_edges
 
-def CreateKTriangle(cPlanes,zOffS,p0,p1,p2):
-    TriPlane = CreateOffsetPlane(cPlanes,zOffS)
-    Triangle = sketchObjs.add(TriPlane)
+    polygon_points = \
+        [math.cos((2 * k * math.pi / number_of_kresling_edges) - shift_angle ) \
+        for k in range(number_of_kresling_edges)]
 
-    # #define the triangle points
-    dP0 = adsk.core.Point3D.create(p0[0], p0[1], p0[2])
-    dP1 = adsk.core.Point3D.create(p1[0], p1[1], p1[2])
-    dP2 = adsk.core.Point3D.create(p2[0], p2[1], p2[2])
-   
-    #draw the triangle edges
-    triLines = Triangle.sketchCurves.sketchLines
-    lVLine = triLines.addByTwoPoints(dP0,dP1)
-    lULine = triLines.addByTwoPoints(dP1,dP2)
-    rULine = triLines.addByTwoPoints(dP2,dP0)
+    gen_hinge_points = \
+    [(2 * math.sin(half_inner_angle)) * math.sin((2 * item + 1) * half_inner_angle - shift_angle) \
+    for item in range(number_of_kresling_edges)]
+
+    hinge_points = [(polygon_points[item] - (hinge_proportion) * gen_hinge_points[item]) for item in range(number_of_kresling_edges)]
+    return hinge_points
+
+def gen_sketch(points_x, points_y, points_z):
+    #Generalized sketch from point list in X, Y, Z
+    new_sketch = sketchObjs.add(rootComp.xYConstructionPlane)
+
+    #define a shape two points at a time
+    Kres_lines = new_sketch.sketchCurves.sketchLines
+    for k in range(len(points_x)):
+        #Wrap around to 0th point again to enclose the polygon
+        point0 = adsk.core.Point3D.create(points_x[k], points_y[k], points_z[k])
+        point1 = adsk.core.Point3D.create(points_x[((k+1) % len(points_x))], points_y[((k+1) % len(points_x))], points_z[((k+1) % len(points_x))])
     
-    profile = Triangle.profiles.item(0)
-
-    return profile  
-
-def KreslingPolygonSketch(cPlanes,pX,pY,pZ):
-    TriPlane = CreateOffsetPlane(cPlanes,0)
-    Triangle = sketchObjs.add(TriPlane)
-
-    N = len(pX)
+        #draw the shape by adding the line
+        Kres_sketch = Kres_lines.addByTwoPoints(point0, point1)
     
-    #define the Kresling polygon
-    KresLines = Triangle.sketchCurves.sketchLines
-    for k in range(N):
-        dP0 = adsk.core.Point3D.create(pX[k], pY[k], pZ)
-        dP1 = adsk.core.Point3D.create(pX[((k+1)%N)], pY[((k+1)%N)], pZ)
-    
-        #draw the Kresling polygon by adding the line
-        KresPLine = KresLines.addByTwoPoints(dP0,dP1)
-    
-    profile = Triangle.profiles.item(0)
+    profile = new_sketch.profiles.item(0)
 
     return profile     
 
-def AddLoftFeature(loftFeatures,profileObjArray):
-    loftInput = loftFeatures.createInput(adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
-    loft0 = loftInput.loftSections
-    for x in profileObjArray:
+def add_loft_feature(loft_features,profile_obj_array):
+    #Lofts objects from sketch profiles
+    loft_input = loft_features.createInput(adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
+    loft0 = loft_input.loftSections
+    for x in profile_obj_array:
         loft0.add(x)
-    loftInput.isSolid = True #True for solid, False for hollow shape
-    loftOutput = loftFeatures.add(loftInput)
-    return loftOutput
+    loft_input.isSolid = True 
+    loft_output = loft_features.add(loft_input)
+    return loft_output
 
-def makeKreslingBody(cPlanes,lofts,P,N,t,L1,alpha,makeBase):
+def make_base(lower_x_points, lower_y_points, thickness, lofts, body_list):
+
+    #Take bottom exterior points and create two drawings at spacing t from each other
+    lid_lower_points = gen_sketch(lower_x_points, lower_y_points, [-thickness for k in range(len(lower_x_points))])
+    lid_upper_points = gen_sketch(lower_x_points, lower_y_points, [0 for k in range(len(lower_x_points))])
+
+    #Loft between lower Kresling polygon and upper Kresling polygon
+    loft_lid = add_loft_feature(lofts,[lid_lower_points,lid_upper_points])
+    
+    body_K_lid = loft_lid.bodies.item(0)
+    body_list.append(body_K_lid) 
+    return body_list
+
+def param_Kresling(radius, points_x, points_y, points_z):
+    #Multiply all points by radius
+    points_x_parameterized = [i * radius for i in points_x]
+    points_y_parameterized = [i * radius for i in points_y]
+
+    #Make the Kresling triangle drawing
+    Kresling_profile = gen_sketch(points_x_parameterized, points_y_parameterized, points_z)
+    return Kresling_profile
+
+def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_polygon_edges, height, top_rotation_angle, base_thickness,hinge_proportion):
     #Create each Kresling triangle according to specified dimensions
 
-    bodyList = [] #Make an empty body list to append new bodies to
+    body_list = [] #Make an empty body list to append new bodies to
 
-    #Lower and upper external Kresling triangle points
-    pLEX = PolygonPoints(P,N,0,1)
-    pUEX = PolygonPoints(P,N,alpha,1)
-    pLEY = PolygonPoints(P,N,0,0)
-    pUEY = PolygonPoints(P,N,alpha,0)
+    #Create point lists for Kresling triangle points
+    lower_x = generate_polygon_points(number_polygon_edges, 0, 0)
+    upper_x = generate_polygon_points(number_polygon_edges, top_rotation_angle, 0)
+    lower_y = generate_polygon_points(number_polygon_edges, 0, math.pi/2)
+    upper_y = generate_polygon_points(number_polygon_edges, top_rotation_angle, math.pi/2)
 
-    #Lower and upper internal Kresling triangle points
-    pLIX = PolygonPoints((P-t),N,0,1)
-    pUIX = PolygonPoints((P-t),N,alpha,1)
-    pLIY = PolygonPoints((P-t),N,0,0)
-    pUIY = PolygonPoints((P-t),N,alpha,0)
+    lower_hinge_x_s = generate_hinge_points(number_polygon_edges, 0, 0, hinge_proportion)
+    upper_hinge_x_s = generate_hinge_points(number_polygon_edges, top_rotation_angle, 0, hinge_proportion)
+    lower_hinge_y_s = generate_hinge_points(number_polygon_edges, 0, math.pi/2, hinge_proportion)
+    upper_hinge_y_s = generate_hinge_points(number_polygon_edges, top_rotation_angle, math.pi/2, hinge_proportion)
 
-    #Make upper and lower Kresling triangles
+    lower_hinge_x_l = generate_hinge_points(number_polygon_edges, 0, 0, 1-hinge_proportion)
+    upper_hinge_x_l = generate_hinge_points(number_polygon_edges, top_rotation_angle, 0, 1-hinge_proportion)
+    lower_hinge_y_l = generate_hinge_points(number_polygon_edges, 0, math.pi/2, 1-hinge_proportion)
+    upper_hinge_y_l = generate_hinge_points(number_polygon_edges, top_rotation_angle, math.pi/2, 1-hinge_proportion)
+
+    #Draw upper and lower Kresling triangles from point lists
     for m in range(2):    
-        for k in range(N):
-            if m == 1: #determine upper or lower triangle
-                pE0 = (pLEX[k],pLEY[k],0)
-                pE1 = (pUEX[k],pUEY[k],L1)
-                pE2 = (pLEX[(k+1)%N],pLEY[(k+1)%N],0)
+        for k in range(number_polygon_edges):
+            if m == 0: #make upper or lower triangle, m == 0 is lower
+                #Make innermost Kresling triangle points
 
-                pI0 = (pLIX[k],pLIY[k],0) 
-                pI1 = (pUIX[k],pUIY[k],L1)
-                pI2 = (pLIX[(k+1)%N],pLIY[(k+1)%N],0)
+                points_z = [0, height, 0]
+                points_x = [lower_x[k], upper_x[k], lower_x[(k + 1) % number_polygon_edges]]
+                points_y = [lower_y[k], upper_y[k], lower_y[(k + 1) % number_polygon_edges]]
+                
+                points_hinge_x = [lower_hinge_x_s[(k) % number_polygon_edges], upper_x[(k) % number_polygon_edges], lower_hinge_x_l[(k) % number_polygon_edges]]
+                points_hinge_y = [lower_hinge_y_s[(k) % number_polygon_edges], upper_y[(k) % number_polygon_edges], lower_hinge_y_l[(k) % number_polygon_edges]]
+
             else:
-                pE0 = (pUEX[k],pUEY[k],L1)
-                pE1 = (pLEX[(k+1)%N],pLEY[(k+1)%N],0)
-                pE2 = (pUEX[(k+1)%N],pUEY[(k+1)%N],L1)
+                points_z = [height, 0, height]
+                points_x = [upper_x[k],lower_x[(k + 1) % number_polygon_edges], upper_x[(k + 1) % number_polygon_edges]]
+                points_y = [upper_y[k],lower_y[(k + 1) % number_polygon_edges], upper_y[(k + 1) % number_polygon_edges]]
 
-                pI0 = (pUIX[k],pUIY[k],L1)
-                pI1 = (pLIX[(k+1)%N],pLIY[(k+1)%N],0)
-                pI2 = (pUIX[(k+1)%N],pUIY[(k+1)%N],L1)
+                points_hinge_x = [upper_hinge_x_s[(k) % number_polygon_edges], lower_x[(k+1) % number_polygon_edges], upper_hinge_x_l[(k) % number_polygon_edges]]
+                points_hinge_y = [upper_hinge_y_s[(k) % number_polygon_edges], lower_y[(k+1) % number_polygon_edges], upper_hinge_y_l[(k) % number_polygon_edges]]
 
-            #Make the exterior Kresling triangle
-            KreslingProfile0 = CreateKTriangle(cPlanes,0,pE0,pE1,pE2)
-            
-            #Make the interior Kresling triangle
-            KreslingProfile1= CreateKTriangle(cPlanes,0,pI0,pI1,pI2)
-            
-            #Create lofts to form Kresling face with specified thickness
-            loftK = AddLoftFeature(lofts,[KreslingProfile0,KreslingProfile1])
-        
-                    #Create bodies from loft features
-            bodyK = loftK.bodies.item(0)
-            bodyList.append(bodyK)
+            #Make the Kresling triangles
+            outer_kresling = param_Kresling(radius, points_x, points_y, points_z)
+            center_kresling = param_Kresling(radius - hinge_thickness, points_x, points_y, points_z)
 
-    #Make Kresling base
-    if makeBase == 1:
-        KLid0 = KreslingPolygonSketch(cPlanes,pLEX,pLEY,-t)
-        KLid1 = KreslingPolygonSketch(cPlanes,pLEX,pLEY,0)
-        loftLid = AddLoftFeature(lofts,[KLid0,KLid1])
-    
-        bodyKLid = loftLid.bodies.item(0)
-        bodyList.append(bodyKLid)    
+            #Loft between interior and exterior Kresling faces, create bodies from loft features
+            outer_loft = add_loft_feature(lofts,[outer_kresling,center_kresling]) 
+            outer_bodies = outer_loft.bodies.item(0)
+            body_list.append(outer_bodies)
 
-    return bodyList
+            if hinge_thickness < wall_thickness: 
+                inner_kresling = param_Kresling(radius - wall_thickness, points_hinge_x, points_hinge_y, points_z)
+                inner_loft = add_loft_feature(lofts,[inner_kresling, center_kresling]) 
+                inner_bodies = inner_loft.bodies.item(0)
+                body_list.append(inner_bodies)
 
+    if base_thickness > 0:
+        make_base([i * radius for i in lower_x],[i * radius for i in lower_y], base_thickness, lofts, body_list)
+
+    return body_list
 
 ##### Main code #####
 
@@ -150,13 +178,11 @@ ui = app.userInterface
 doc = app.documents.add(adsk.core.DocumentTypes.FusionDesignDocumentType)
 design = app.activeProduct
 
-# Create sketch, construction plane, loft, and pattern objects
+# Create sketch, construction plane, and loft objects
 rootComp = design.rootComponent
 sketchObjs = rootComp.sketches
 cPlaneObjs = rootComp.constructionPlanes
 loftFeats = rootComp.features.loftFeatures
 
-##Make Kresling structure
-Kresling = makeKreslingBody(cPlaneObjs,loftFeats,P,N,t,L1,alpha,makeBase)
-
-
+# Make Kresling structure
+Kresling = make_Kresling_body(loftFeats, edge_length, wall_thickness, hinge_thickness, number_polygon_edges, height , top_rotation_angle * (math.pi/180), base_thickness,hinge_proportion)
