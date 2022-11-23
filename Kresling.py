@@ -1,5 +1,5 @@
 '''
-Kris Dorsey
+Kris Dorsey, Sonia Roberts, and Ash Wu
 K.Dorsey@Northeastern.edu
 Kristen@Kristendorsey.com
 This script is run from Autodesk Fusion 360 scripts and add ons interface
@@ -26,7 +26,7 @@ top_rotation_angle = 12
 wall_thickness = 0.1 
 
 #Kresling ratios
-hinge_proportion = 0.1
+hinge_proportion = 0.05
 ratio_hinge_to_wall = 0.5
 ratio_base_to_wall = 0
 
@@ -44,20 +44,50 @@ def generate_polygon_points(number_of_kresling_edges, offset_angle, sine_rotatio
     return polygon_points 
 
 def generate_hinge_points(number_of_kresling_edges, offset_angle, sine_rotation, hinge_proportion):
-    shift_angle = offset_angle + sine_rotation
     half_inner_angle = math.pi / number_of_kresling_edges
 
-    polygon_points = \
-        [math.cos((2 * k * math.pi / number_of_kresling_edges) - shift_angle ) \
-        for k in range(number_of_kresling_edges)]
+    polygon_points = [math.cos((2 * k * math.pi / number_of_kresling_edges) - (offset_angle + sine_rotation)) for k in range(number_of_kresling_edges)]
 
-    gen_hinge_points = \
-    [(2 * math.sin(half_inner_angle)) * math.sin((2 * item + 1) * half_inner_angle - shift_angle) \
-    for item in range(number_of_kresling_edges)]
+    #changed to +shift_angle over -shift_angle to fix sign issue
+    gen_hinge_points = [math.sin((2 * item + 1) * half_inner_angle - sine_rotation - offset_angle) for item in range(number_of_kresling_edges)]
 
     hinge_points_close = [(polygon_points[item] - (hinge_proportion) * gen_hinge_points[item]) for item in range(number_of_kresling_edges)]
     hinge_points_far = [(polygon_points[item] - (1-hinge_proportion) * gen_hinge_points[item]) for item in range(number_of_kresling_edges)]
+    
     return hinge_points_close + hinge_points_far
+
+def find_intersection_points(number_of_kresling_edges, offset_angle, height, hinge_points_x, hinge_points_y, hinge_proportion, upper_level):
+    #find the parameter intersection of the parallel lines with the two hinge points
+    #This is not a generalized function yet, it only works for calculating top point
+    half_inner_angle = math.pi / number_of_kresling_edges
+
+    intersection_point_x = []
+    intersection_point_y = []
+    intersection_point_z = []
+
+    if upper_level == 0:
+        for item in range(number_of_kresling_edges):
+
+            parameter_numerator = math.sin((2 * item + 1) * half_inner_angle) * (2 * hinge_proportion - 1)
+            parameter_denominator =  math.cos(2 * (item + 1) * half_inner_angle) - math.cos(2 * item * half_inner_angle)
+            parameter = parameter_numerator / parameter_denominator
+
+            intersection_point_x.append(parameter * (math.cos(2 * item * half_inner_angle - offset_angle) - math.cos(2 * item * half_inner_angle)) + hinge_points_x[item])
+            intersection_point_y.append(parameter * (math.sin(2 * item * half_inner_angle - offset_angle) - math.sin(2 * item * half_inner_angle)) + hinge_points_y[item])
+            intersection_point_z.append(parameter * height)
+    else:
+        for item in range(number_of_kresling_edges):
+
+            parameter_numerator = math.sin((2 * item + 1) * half_inner_angle - offset_angle) * (2 * hinge_proportion - 1)
+            parameter_denominator =  math.cos(2 * (item + 1) * half_inner_angle - offset_angle) - math.cos(2 * item * half_inner_angle - offset_angle)
+            parameter = parameter_numerator / parameter_denominator
+
+            intersection_point_x.append(parameter * (-math.cos(2 * item * half_inner_angle - offset_angle) + math.cos(2 * (item + 1) * half_inner_angle)) + hinge_points_x[item])
+            intersection_point_y.append(parameter * (-math.sin(2 * item * half_inner_angle - offset_angle) + math.sin(2 * (item + 1) * half_inner_angle)) + hinge_points_y[item])
+            intersection_point_z.append(parameter * -height + height)
+    
+    intersection_points = [intersection_point_x, intersection_point_y, intersection_point_z]
+    return intersection_points
 
 def gen_sketch(points_x, points_y, points_z):
     #Generalized sketch from point list in X, Y, Z
@@ -125,31 +155,39 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
     lower_hinge_y = generate_hinge_points(number_polygon_edges, 0, math.pi/2, hinge_proportion)
     upper_hinge_y = generate_hinge_points(number_polygon_edges, top_rotation_angle, math.pi/2, hinge_proportion)
 
-    lower_hinge_x_l = generate_hinge_points(number_polygon_edges, 0, 0, 1 - hinge_proportion)
-    upper_hinge_x_l = generate_hinge_points(number_polygon_edges, top_rotation_angle, 0, 1 - hinge_proportion)
-    lower_hinge_y_l = generate_hinge_points(number_polygon_edges, 0, math.pi/2, 1 - hinge_proportion)
-    upper_hinge_y_l = generate_hinge_points(number_polygon_edges, top_rotation_angle, math.pi/2, 1 - hinge_proportion)
+    intersection_points_lower = find_intersection_points(number_polygon_edges, top_rotation_angle, height, lower_hinge_x, lower_hinge_y, hinge_proportion, 0)
+    intersection_lower_x = intersection_points_lower[0]
+    intersection_lower_y = intersection_points_lower[1]
+    intersection_lower_z = intersection_points_lower[2]
+
+    intersection_points_upper = find_intersection_points(number_polygon_edges, top_rotation_angle, height, upper_hinge_x, upper_hinge_y, hinge_proportion, 1)
+    intersection_upper_x = intersection_points_upper[0]
+    intersection_upper_y = intersection_points_upper[1]
+    intersection_upper_z = intersection_points_upper[2]
 
     #Draw upper and lower Kresling triangles from point lists
     for m in range(2):    
-        for k in range(number_polygon_edges):
+        for k in range(6):#number_polygon_edges):
+
             if m == 0: #make upper or lower triangle, m == 0 is lower
 
                 points_z = [0, height, 0]
                 points_x = [lower_x[k], upper_x[k], lower_x[(k + 1) % number_polygon_edges]]
                 points_y = [lower_y[k], upper_y[k], lower_y[(k + 1) % number_polygon_edges]]
                 
-                points_hinge_x = [lower_hinge_x[(k) % len(lower_hinge_x)], upper_x[(k) % number_polygon_edges], lower_hinge_x[(number_polygon_edges + k) % len(lower_hinge_x)]]
-                points_hinge_y = [lower_hinge_y[(k) % len(lower_hinge_x)], upper_y[(k) % number_polygon_edges], lower_hinge_y[(number_polygon_edges + k) % len(lower_hinge_x)]]
-
+                points_hinge_x = [lower_hinge_x[(k) % len(lower_hinge_x)], intersection_lower_x[(k) % len(intersection_lower_x)], lower_hinge_x[(number_polygon_edges + k) % len(lower_hinge_x)]]
+                points_hinge_y = [lower_hinge_y[(k) % len(lower_hinge_x)], intersection_lower_y[(k) % len(intersection_lower_x)], lower_hinge_y[(number_polygon_edges + k) % len(lower_hinge_x)]]
+                points_hinge_z = [0, intersection_lower_z[k], 0]
+        
             else:
                 points_z = [height, 0, height]
                 points_x = [upper_x[k],lower_x[(k + 1) % number_polygon_edges], upper_x[(k + 1) % number_polygon_edges]]
                 points_y = [upper_y[k],lower_y[(k + 1) % number_polygon_edges], upper_y[(k + 1) % number_polygon_edges]]
 
-                points_hinge_x = [upper_hinge_x[(k) % len(lower_hinge_x)], lower_x[(k+1) % number_polygon_edges], upper_hinge_x[(number_polygon_edges + k) % len(lower_hinge_x)]]
-                points_hinge_y = [upper_hinge_y[(k) % len(lower_hinge_x)], lower_y[(k+1) % number_polygon_edges], upper_hinge_y[(number_polygon_edges + k) % len(lower_hinge_x)]]
-
+                points_hinge_x = [upper_hinge_x[(k) % len(lower_hinge_x)], intersection_upper_x[(k) % len(intersection_upper_x)], upper_hinge_x[(number_polygon_edges + k) % len(lower_hinge_x)]]
+                points_hinge_y = [upper_hinge_y[(k) % len(lower_hinge_x)], intersection_upper_y[(k) % len(intersection_upper_x)], upper_hinge_y[(number_polygon_edges + k) % len(lower_hinge_x)]]
+                points_hinge_z = [height, intersection_upper_z[k % len(intersection_upper_z)], height]
+            
             #Make the Kresling triangles
             outer_kresling = param_Kresling(radius, points_x, points_y, points_z)
             center_kresling = param_Kresling(radius - hinge_thickness, points_x, points_y, points_z)
@@ -161,41 +199,33 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
 
             
             if hinge_thickness < wall_thickness: 
-                inner_kresling = param_Kresling(radius - wall_thickness, points_hinge_x, points_hinge_y, points_z)
+                inner_kresling = param_Kresling(radius - wall_thickness, points_hinge_x, points_hinge_y, points_hinge_z)
                 inner_loft = add_loft_feature(lofts,[inner_kresling, center_kresling]) 
                 inner_bodies = inner_loft.bodies.item(0)
                 body_list.append(inner_bodies)
             
-
+            
     if base_thickness > 0:
         make_base([i * radius for i in lower_x],[i * radius for i in lower_y], base_thickness, lofts, body_list)
 
     '''
-    #Chambers
-    for m in range(1):    
-        for k in range(number_polygon_edges):
-            if m == 0: #make upper or lower triangle, m == 0 is lower
-                #Make innermost Kresling triangle points
+    #Generalized sketch from point list in X, Y, Z
+    new_sketch = sketchObjs.add(rootComp.xYConstructionPlane)
 
-                points_z = [0, height, 0]
-                points_x = [0, upper_x[k], lower_x[(k) % number_polygon_edges]]
-                points_y = [0, upper_y[k], lower_y[(k) % number_polygon_edges]]
+    #define a shape two points at a time
+    Kres_lines = new_sketch.sketchCurves.sketchLines
 
-            else:
-                points_z = [height, 0, height]
-                points_x = [0,lower_x[(k + 1) % number_polygon_edges], upper_x[(k) % number_polygon_edges]]
-                points_y = [0,lower_y[(k + 1) % number_polygon_edges], upper_y[(k) % number_polygon_edges]]
+    point0 = adsk.core.Point3D.create(0, 0, 0)
+    point1 = adsk.core.Point3D.create(radius * lower_x[0], radius * lower_y[0], 0)
+    Kres_lines.addByTwoPoints(point0, point1)
 
-            #Make the Kresling triangles
-            origin_kresling = param_Kresling(radius, points_x, points_y, points_z)
-            #center_kresling = param_Kresling(radius - hinge_thickness, points_x, points_y, points_z)
-
-            #Loft between interior and exterior Kresling faces, create bodies from loft features
-            #outer_loft = add_loft_feature(lofts,[outer_kresling,center_kresling]) 
-            #outer_bodies = outer_loft.bodies.item(0)
-            #body_list.append(outer_bodies)
-        '''
-
+    point1 = adsk.core.Point3D.create(radius * lower_x[2], radius * lower_y[2], 0)
+    Kres_lines.addByTwoPoints(point0, point1)
+    
+    point1 = adsk.core.Point3D.create(radius * lower_x[4], radius * lower_y[4], 0)
+    Kres_lines.addByTwoPoints(point0, point1)
+    '''
+    
     return body_list
 
 ##### Main code #####
