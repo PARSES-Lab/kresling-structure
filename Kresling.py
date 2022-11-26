@@ -131,21 +131,71 @@ def make_base(lower_x_points, lower_y_points, thickness, lofts, body_list):
     body_list.append(body_K_lid) 
     return body_list
 
-def make_chambers(number_polygon_edges, outer_radius, inner_radius, height, lower_x, lower_y, upper_x, upper_y):
-    
-    number_chambers  = number_polygon_edges//2
+def make_chambers(lofts,number_polygon_edges, outer_radius, inner_radius, top_rotation_angle, height, lower_x, lower_y, upper_x, upper_y):
+    body_list = []
+    number_chambers  = number_polygon_edges // 2
+    half_inner_angle = math.pi / number_polygon_edges
 
     for item in range(number_chambers):
+        angle_count = (item * 2 + number_polygon_edges - 1) 
         points_z_lower = [0, height, 0]
-        points_x_lower = [outer_radius * lower_x[item * 2], inner_radius * upper_x[item * 2], inner_radius * lower_x[item * 2]] 
-        points_y_lower = [outer_radius * lower_y[item * 2], inner_radius * upper_y[item * 2], inner_radius * lower_y[item * 2]] 
-        param_Kresling(1, points_x_lower, points_y_lower, points_z_lower)
+
+        points_x_lower0 = \
+            [outer_radius* lower_x[((angle_count) % number_polygon_edges)] - (outer_radius - wall_thickness / 2) * math.sin((((angle_count) % number_polygon_edges)*2 + 1) * half_inner_angle), \
+            inner_radius * upper_x[((angle_count) % number_polygon_edges)] - (inner_radius - wall_thickness / 2) * math.sin((((angle_count) % number_polygon_edges)*2 + 1) * half_inner_angle - top_rotation_angle), \
+            inner_radius * lower_x[((angle_count) % number_polygon_edges)] - (inner_radius - wall_thickness / 2) * math.sin((((angle_count) % number_polygon_edges)*2 + 1) * half_inner_angle)]
+
+        points_x_lower1 = \
+            [outer_radius* lower_x[((angle_count + 1) % number_polygon_edges)] - (wall_thickness / 2) * math.sin((((angle_count + 1) % number_polygon_edges)*2 + 1) * half_inner_angle), \
+            inner_radius * upper_x[((angle_count + 1) % number_polygon_edges)] - (wall_thickness / 2) * math.sin((((angle_count + 1) % number_polygon_edges)*2 + 1) * half_inner_angle - top_rotation_angle), \
+            inner_radius * lower_x[((angle_count + 1) % number_polygon_edges)] - (wall_thickness / 2) * math.sin((((angle_count + 1) % number_polygon_edges)*2 + 1) * half_inner_angle)]
+        
+        points_y_lower0 = \
+            [outer_radius* lower_y[((angle_count) % number_polygon_edges)] + (outer_radius - wall_thickness / 2) * math.cos((((angle_count) % number_polygon_edges)*2 + 1) * half_inner_angle), \
+            inner_radius * upper_y[((angle_count) % number_polygon_edges)] + (inner_radius - wall_thickness / 2) * math.cos((((angle_count) % number_polygon_edges)*2 + 1) * half_inner_angle - top_rotation_angle), \
+            inner_radius * lower_y[((angle_count) % number_polygon_edges)] + (inner_radius - wall_thickness / 2) * math.cos((((angle_count) % number_polygon_edges)*2 + 1) * half_inner_angle)]
+
+        points_y_lower1 = \
+            [outer_radius* lower_y[((angle_count + 1) % number_polygon_edges)] + (wall_thickness / 2) * math.cos((((angle_count + 1) % number_polygon_edges)*2 + 1) * half_inner_angle), \
+            inner_radius * upper_y[((angle_count + 1) % number_polygon_edges)] + (wall_thickness / 2) * math.cos((((angle_count + 1) % number_polygon_edges)*2 + 1) * half_inner_angle - top_rotation_angle), \
+            inner_radius * lower_y[((angle_count + 1) % number_polygon_edges)] + (wall_thickness / 2) * math.cos((((angle_count + 1) % number_polygon_edges)*2 + 1) * half_inner_angle)]
+
+        inner_lower_triangle = param_Kresling(1, points_x_lower0, points_y_lower0, points_z_lower)
+        outer_lower_triangle = param_Kresling(1, points_x_lower1, points_y_lower1, points_z_lower)
+
+        lower_loft = add_loft(lofts,[inner_lower_triangle,outer_lower_triangle])
+        lower_bodies = lower_loft.bodies.item(0)
+        body_list.append(lower_bodies)
 
         points_z_upper = [height, 0, height]
-        points_x_upper = [outer_radius * upper_x[item * 2], outer_radius * lower_x[item * 2], inner_radius * upper_x[item * 2]] 
-        points_y_upper = [outer_radius * upper_y[item * 2], outer_radius * lower_y[item * 2], inner_radius * upper_y[item * 2]] 
-        param_Kresling(1, points_x_upper, points_y_upper, points_z_upper)
-    return radius
+
+        points_x_upper0 = \
+            [outer_radius* upper_x[((angle_count) % number_polygon_edges)] - (outer_radius - wall_thickness / 2) * math.sin((((angle_count) % number_polygon_edges)*2 + 1) * half_inner_angle - top_rotation_angle), \
+            outer_radius * lower_x[((angle_count) % number_polygon_edges)] - (outer_radius - wall_thickness / 2) * math.sin((((angle_count) % number_polygon_edges)*2 + 1) * half_inner_angle), \
+            inner_radius * upper_x[((angle_count) % number_polygon_edges)] - (inner_radius - wall_thickness / 2) * math.sin((((angle_count) % number_polygon_edges)*2 + 1) * half_inner_angle - top_rotation_angle)]
+
+        points_x_upper1 = \
+            [outer_radius* upper_x[((angle_count + 1) % number_polygon_edges)] - (wall_thickness / 2) * math.sin((((angle_count + 1) % number_polygon_edges)*2 + 1) * half_inner_angle - top_rotation_angle), \
+            outer_radius * lower_x[((angle_count + 1) % number_polygon_edges)] - (wall_thickness / 2) * math.sin((((angle_count + 1) % number_polygon_edges)*2 + 1) * half_inner_angle), \
+            inner_radius * upper_x[((angle_count + 1) % number_polygon_edges)] - (wall_thickness / 2) * math.sin((((angle_count + 1) % number_polygon_edges)*2 + 1) * half_inner_angle - top_rotation_angle)]
+        
+        points_y_upper0 = \
+            [outer_radius* upper_y[((angle_count) % number_polygon_edges)] + (outer_radius - wall_thickness / 2) * math.cos((((angle_count) % number_polygon_edges)*2 + 1) * half_inner_angle - top_rotation_angle), \
+            outer_radius * lower_y[((angle_count) % number_polygon_edges)] + (outer_radius - wall_thickness / 2) * math.cos((((angle_count) % number_polygon_edges)*2 + 1) * half_inner_angle), \
+            inner_radius * upper_y[((angle_count) % number_polygon_edges)] + (inner_radius - wall_thickness / 2) * math.cos((((angle_count) % number_polygon_edges)*2 + 1) * half_inner_angle - top_rotation_angle)]
+
+        points_y_upper1 = \
+            [outer_radius* upper_y[((angle_count + 1) % number_polygon_edges)] + (wall_thickness / 2) * math.cos((((angle_count + 1) % number_polygon_edges)*2 + 1) * half_inner_angle - top_rotation_angle), \
+            outer_radius * lower_y[((angle_count + 1) % number_polygon_edges)] + (wall_thickness / 2) * math.cos((((angle_count + 1) % number_polygon_edges)*2 + 1) * half_inner_angle), \
+            inner_radius * upper_y[((angle_count + 1) % number_polygon_edges)] + (wall_thickness / 2) * math.cos((((angle_count + 1) % number_polygon_edges)*2 + 1) * half_inner_angle - top_rotation_angle)]
+
+        inner_upper_triangle = param_Kresling(1, points_x_upper0, points_y_upper0, points_z_upper)
+        outer_upper_triangle = param_Kresling(1, points_x_upper1, points_y_upper1, points_z_upper)
+
+        upper_loft = add_loft(lofts,[inner_upper_triangle, outer_upper_triangle])
+        upper_bodies = upper_loft.bodies.item(0)
+        body_list.append(upper_bodies)
+    return outer_radius
 
 def param_Kresling(radius, points_x, points_y, points_z):
     #Multiply all points by radius
@@ -229,7 +279,7 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
     if base_thickness > 0:
         make_base([i * radius for i in lower_x],[i * radius for i in lower_y], base_thickness, lofts, body_list)
 
-    #make_chambers(number_polygon_edges, radius - wall_thickness, (radius) - chamber_length, height, lower_x, lower_y, upper_x, upper_y)
+    make_chambers(lofts,number_polygon_edges, radius - wall_thickness, radius - chamber_length, top_rotation_angle, height, lower_x, lower_y, upper_x, upper_y)
 
     return body_list
 
