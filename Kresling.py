@@ -21,11 +21,11 @@ import math
 #Kresling dimensions 
 # all in cm
 edge_length = 3
-height = 3
+height = 4.07
 number_polygon_edges = 6 
-top_rotation_angle = 30 #degrees. IROS set is 48, 30, and 12 degrees 
-wall_thickness = 0.15 
-chamber_length = 4.1 #IROS set is 2.7, 4.1 and 4.9 cm, respectively, with above angles
+top_rotation_angle = 31 # in degrees 
+wall_thickness = 0.14 
+chamber_length = 1.5
 
 #Ratios to hack the Kresling to increase compliance
 #Values for a standard Kresling with two lids are
@@ -146,16 +146,18 @@ def make_base(upper_x_points, upper_y_points, radius, height, thickness, lofts, 
     body_K_lip = loft_lip.bodies.item(0)
     body_list.append(body_K_lip) 
 
+    
     if thickness > 0: 
         #Take exterior points and create two drawings at spacing t from each other
         lip_lower_points = gen_sketch([i * (radius - thickness) for i in upper_x_points], [i * (radius - thickness) for i in upper_y_points], [height for k in range(len(upper_x_points))])
         lip_upper_points = gen_sketch([i * (radius - thickness) for i in upper_x_points], [i * (radius - thickness) for i in upper_y_points], [height + thickness for k in range(len(upper_x_points))])
 
         #Loft between two drawings to make base
-        loft_lip = add_loft(lofts,[lip_lower_points,lip_upper_points])
+        loft_lip2 = add_loft(lofts,[lip_lower_points,lip_upper_points])
     
-        body_K_lip = loft_lip.bodies.item(0)
-        body_list.append(body_K_lip) 
+        body_K_lip2 = loft_lip2.bodies.item(0)
+        body_list.append(body_K_lip2) 
+    
     return body_list
 
 def make_chambers(lofts, number_polygon_edges, outer_radius, inner_radius, top_rotation_angle, height, lower_x, lower_y, upper_x, upper_y):
@@ -298,10 +300,11 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
             outer_kresling = param_Kresling(radius - hinge_thickness, points_x, points_y, points_z)
             inner_kresling = param_Kresling(radius - wall_thickness, points_x, points_y, points_z)
 
-            #Loft between interior and exterior Kresling faces, create bodies from loft features
-            outer_loft = add_loft(lofts,[outer_kresling, inner_kresling]) 
-            outer_bodies = outer_loft.bodies.item(0)
-            body_list.append(outer_bodies)
+            if hinge_thickness < wall_thickness:
+                #Loft between interior and exterior Kresling faces, create bodies from loft features
+                outer_loft = add_loft(lofts,[outer_kresling, inner_kresling]) 
+                outer_bodies = outer_loft.bodies.item(0)
+                body_list.append(outer_bodies)
 
             hinge_loft = add_loft(lofts,[outer_kresling, hinge_kresling]) 
             hinge_bodies = hinge_loft.bodies.item(0)
@@ -315,7 +318,7 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
                 center_bodies = center_loft.bodies.item(0)
                 body_list.append(center_bodies)
 
-    make_chambers(lofts,number_polygon_edges, radius - hinge_thickness, radius - chamber_length, top_rotation_angle, height, lower_x, lower_y, upper_x, upper_y)
+    make_chambers(lofts,number_polygon_edges, radius-hinge_thickness, radius - chamber_length, top_rotation_angle, height, lower_x, lower_y, upper_x, upper_y)
 
     if base_thickness > 0:
         make_base(lower_x, lower_y, radius, 0, -1 * wall_thickness, lofts, body_list)
