@@ -23,9 +23,9 @@ import math
 edge_length = 3
 height = 3
 number_polygon_edges = 6 
-top_rotation_angle = 45 # in degrees 
+top_rotation_angle = 30 #degrees. IROS set is 48, 30, and 12 degrees 
 wall_thickness = 0.15 
-chamber_length = 1.75
+chamber_length = 4.1 #IROS set is 2.7, 4.1 and 4.9 cm, respectively, with above angles
 
 #Ratios to hack the Kresling to increase compliance
 #Values for a standard Kresling with two lids are
@@ -41,10 +41,10 @@ chamber_length = 1.75
 #Lip to wall is the upper lip thickness ratio (that upper lid sits within)
 #ratio_lip_to_wall = 1
 
-hinge_proportion = 0.05
-ratio_hinge_to_wall = 0.5
-ratio_base_to_wall = 0
-ratio_lip_to_wall = 0
+hinge_proportion = 0
+ratio_hinge_to_wall = 1
+ratio_base_to_wall = 1
+ratio_lip_to_wall = 1
 
 #Calculate hinge and base thicknesses from ratios (do not change these values)
 hinge_thickness = wall_thickness * ratio_hinge_to_wall
