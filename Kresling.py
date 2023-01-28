@@ -29,7 +29,7 @@ chamber_length = 1.5
 
 #Ratios to hack the Kresling to increase compliance
 #Values for a standard Kresling with two lids are
-# Ratio of wall length of where the hinge angle intersects with polyon. For example, 0.1 draws the hinge point starting at 10% and 90% across the polygon
+# Ratio of wall length of where the hinge angle intersects with polygon. For example, 0.1 draws the hinge point starting at 10% and 90% across the polygon
 #hinge_proportion = 0.05
 
 #Hinge to wall is the hinge thickness ratio, relative to specified wall thickness
@@ -42,7 +42,14 @@ chamber_length = 1.5
 #ratio_lip_to_wall = 1
 
 hinge_proportion = 0
-ratio_hinge_to_wall = 1
+
+#temporary hinge definition using offset instead of proportion:
+hinge_offset = 0.1
+
+#generate hinges on the inside faces of the Kresling if true, otherwise generate on the outside
+inside_hinges = True
+
+ratio_hinge_to_wall = 0.9
 ratio_base_to_wall = 1
 ratio_lip_to_wall = 1
 
@@ -59,52 +66,6 @@ def generate_polygon_points(number_of_kresling_edges, offset_angle, sine_rotatio
         for k in range(number_of_kresling_edges)]
 	
     return polygon_points 
-
-def generate_hinge_points(number_of_kresling_edges, offset_angle, sine_rotation, hinge_proportion):
-    half_inner_angle = math.pi / number_of_kresling_edges
-
-    polygon_points = [math.cos((2 * k * math.pi / number_of_kresling_edges) - (offset_angle + sine_rotation)) for k in range(number_of_kresling_edges)]
-
-    #changed to +shift_angle over -shift_angle to fix sign issue
-    gen_hinge_points = [math.sin((2 * item + 1) * half_inner_angle - sine_rotation - offset_angle) for item in range(number_of_kresling_edges)]
-
-    hinge_points_close = [(polygon_points[item] - (hinge_proportion) * gen_hinge_points[item]) for item in range(number_of_kresling_edges)]
-    hinge_points_far = [(polygon_points[item] - (1-hinge_proportion) * gen_hinge_points[item]) for item in range(number_of_kresling_edges)]
-    
-    return hinge_points_close + hinge_points_far
-
-def find_intersection_points(number_of_kresling_edges, offset_angle, height, hinge_points_x, hinge_points_y, hinge_proportion, upper_level):
-    #find the parameter intersection of the parallel lines with the two hinge points
-    #This is not a generalized function yet, it only works for calculating top point
-    half_inner_angle = math.pi / number_of_kresling_edges
-
-    intersection_point_x = []
-    intersection_point_y = []
-    intersection_point_z = []
-
-    if upper_level == 0:
-        for item in range(number_of_kresling_edges):
-
-            parameter_numerator = math.sin((2 * item + 1) * half_inner_angle) * (2 * hinge_proportion - 1)
-            parameter_denominator =  math.cos(2 * (item + 1) * half_inner_angle) - math.cos(2 * item * half_inner_angle)
-            parameter = parameter_numerator / parameter_denominator
-
-            intersection_point_x.append(parameter * (math.cos(2 * item * half_inner_angle - offset_angle) - math.cos(2 * item * half_inner_angle)) + hinge_points_x[item])
-            intersection_point_y.append(parameter * (math.sin(2 * item * half_inner_angle - offset_angle) - math.sin(2 * item * half_inner_angle)) + hinge_points_y[item])
-            intersection_point_z.append(parameter * height)
-    else:
-        for item in range(number_of_kresling_edges):
-
-            parameter_numerator = math.sin((2 * item + 1) * half_inner_angle - offset_angle) * (2 * hinge_proportion - 1)
-            parameter_denominator =  math.cos(2 * (item + 1) * half_inner_angle - offset_angle) - math.cos(2 * item * half_inner_angle - offset_angle)
-            parameter = parameter_numerator / parameter_denominator
-
-            intersection_point_x.append(parameter * (-math.cos(2 * item * half_inner_angle - offset_angle) + math.cos(2 * (item + 1) * half_inner_angle)) + hinge_points_x[item])
-            intersection_point_y.append(parameter * (-math.sin(2 * item * half_inner_angle - offset_angle) + math.sin(2 * (item + 1) * half_inner_angle)) + hinge_points_y[item])
-            intersection_point_z.append(parameter * -height + height)
-    
-    intersection_points = [intersection_point_x, intersection_point_y, intersection_point_z]
-    return intersection_points
 
 def gen_sketch(points_x, points_y, points_z):
     #Generalized sketch from point list in X, Y, Z
@@ -247,80 +208,94 @@ def param_Kresling(radius, points_x, points_y, points_z):
     Kresling_profile = gen_sketch(points_x_parameterized, points_y_parameterized, points_z)
     return Kresling_profile
 
-def cutCombine(targetBody, toolBody):
-    combineFeat = rootComp.features.combineFeatures
-    
+def cut_combine(target_body, tool_body):
     #Cut the tool body out of the target body and discard tool body
     tools = adsk.core.ObjectCollection.create()
-    tools.add(toolBody)
-    combineInput: adsk.fusion.CombineFeatureInput = combineFeat.createInput(targetBody, tools)
-    combineInput.operation = adsk.fusion.FeatureOperations.CutFeatureOperation
-    return combineFeat.add(combineInput)
+    tools.add(tool_body)
+    combine_input: adsk.fusion.CombineFeatureInput = combineFeats.createInput(target_body, tools)
+    combine_input.operation = adsk.fusion.FeatureOperations.CutFeatureOperation
+    return combineFeats.add(combine_input)
 
-hinge_thicknessTEMP = 0.1
-
-def constructOffsetPlane(planeProfile, offsetDistance):
+def construct_offset_plane(plane_profile, offset_distance):
     #create planes input
-    planeInput = cPlaneObjs.createInput()
+    plane_input = cPlaneObjs.createInput()
 
-    #set offset distance for hinge thickness
-    offsetValue = adsk.core.ValueInput.createByReal(offsetDistance)
-    planeInput.setByOffset(planeProfile, offsetValue)
+    #set offset distance
+    offset_value = adsk.core.ValueInput.createByReal(offset_distance)
+    plane_input.setByOffset(plane_profile, offset_value)
 
     #create the offset construction plane
-    offsetPlane = cPlaneObjs.add(planeInput)
+    offset_plane = cPlaneObjs.add(plane_input)
 
-    return offsetPlane
+    return offset_plane
 
-def projectSketch(inputSketch,workingPlane):
-    projectedSketch = sketchObjs.add(workingPlane) #Make new sketch on the working plane
+def project_sketch(input_sketch,working_plane):
+    #Make new sketch on the working plane
+    projected_sketch = sketchObjs.add(working_plane)
 
     #Project curves of input sketch onto the working plane
-    for curve in inputSketch.sketchCurves:
-        projectedSketch.project(curve)
+    for curve in input_sketch.sketchCurves:
+        projected_sketch.project(curve)
  
-    return projectedSketch
+    return projected_sketch
 
-def insideOffsetSketch(inputSketch, offsetDistance):
+def offset_sketch_inside(input_sketch, offset_distance):
     #Find all geometry to be offset
-    offsetGeometry = adsk.core.ObjectCollection.create()
-    inputLines = inputSketch.sketchCurves.sketchLines
-    offsetGeometry.clear()
-    [offsetGeometry.add(l) for l in inputLines]
+    offset_geometry = adsk.core.ObjectCollection.create()
+    input_lines = input_sketch.sketchCurves.sketchLines
+    offset_geometry.clear()
+    [offset_geometry.add(line) for line in input_lines]
+
+    #Keep track of original sketches
+    original_sketch_count = input_sketch.sketchCurves.sketchLines.count
 
     #Define offset direction by picking a point in the center of the geometry
     #Average the coordinate locations of all the sketch points in the geometry
     x_tot = 0
     y_tot = 0
     z_tot = 0
-    for point in inputSketch.sketchPoints:
+    for point in input_sketch.sketchPoints:
         x_tot += point.geometry.x
         y_tot += point.geometry.y
         z_tot += point.geometry.z
-    totalPoints = inputSketch.sketchPoints.count
-    x_dir = x_tot / totalPoints
-    y_dir = y_tot / totalPoints
-    z_dir = z_tot / totalPoints
+    total_points = input_sketch.sketchPoints.count
+    x_dir = x_tot / total_points
+    y_dir = y_tot / total_points
+    z_dir = z_tot / total_points
     
-    offsetDir = adsk.core.Point3D.create(x_dir,y_dir,z_dir)
+    offset_dir = adsk.core.Point3D.create(x_dir,y_dir,z_dir)
 
-    offsettedSketch = inputSketch.offset(offsetGeometry, offsetDir, offsetDistance)
+    #Make original lines construction lines
+    for i in range(original_sketch_count):
+        input_sketch.sketchCurves.sketchLines.item(i).isConstruction = True
+
+    #Offset sketch inwards by specified distance
+    input_sketch.offset(offset_geometry, offset_dir, offset_distance)
     
-    return offsettedSketch
-
-def extrudeProf(inputSketch,extrudeDistance):
-    extrudeProfile = inputSketch.profiles.item(1)
-    distance = adsk.core.ValueInput.createByReal(extrudeDistance)
-    extrude = extrudeFeats.addSimple(extrudeProfile, distance, adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
-    extrudeBody = extrude.bodies.item(0)
-    return extrudeBody  
-
-def createHingeExtrude():
-    constructOffsetPlane(rootComp.sketches.item(0).profiles.item(0), hinge_thicknessTEMP)
-    projSketch1 = projectSketch(rootComp.sketches.item(0),cPlaneObjs.item(0))
-    insideOffsetSketch(projSketch1,0.1)
-    extrudeProf(projSketch1, hinge_thicknessTEMP)
     return
+
+def create_hinge_extrude(original_sketch, offset_from_original, hinge_loft_thickness, upper_or_lower):
+    #Get profile of original Kresling triangle sketch
+    original_profile = original_sketch.profiles.item(0)
+
+    #Create construction plane by offsetting the original profile by the hinge thickness
+    if upper_or_lower == 0: #0 is lower
+        hinge_plane_offset = hinge_loft_thickness
+    else:
+        hinge_plane_offset = hinge_loft_thickness * (-1) #if a hinge is being generated on an upper plane, the offset must be reversed
+    
+    hinge_plane = construct_offset_plane(original_profile, hinge_plane_offset)
+
+    #Project the original sketch onto the construction plane in a new sketch
+    hinge_sketch = project_sketch(original_sketch, hinge_plane)
+    #Offset the projection on the new sketch by however much the hinge triangle is smaller than the original
+    offset_sketch_inside(hinge_sketch, offset_from_original)
+
+    #Loft the original triangle to the hinge triangle
+    hinge_profile = hinge_sketch.profiles.item(0)
+    hinge_loft = add_loft(loftFeats,[original_profile, hinge_profile])
+
+    return hinge_loft
 
 def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_polygon_edges, height, top_rotation_angle, base_thickness, lip_thickness, hinge_proportion):
     #Create each Kresling triangle according to specified dimensions
@@ -333,21 +308,6 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
     lower_y = generate_polygon_points(number_polygon_edges, 0, math.pi/2)
     upper_y = generate_polygon_points(number_polygon_edges, top_rotation_angle, math.pi/2)
 
-    lower_hinge_x = generate_hinge_points(number_polygon_edges, 0, 0, hinge_proportion)
-    upper_hinge_x = generate_hinge_points(number_polygon_edges, top_rotation_angle, 0, hinge_proportion)
-    lower_hinge_y = generate_hinge_points(number_polygon_edges, 0, math.pi/2, hinge_proportion)
-    upper_hinge_y = generate_hinge_points(number_polygon_edges, top_rotation_angle, math.pi/2, hinge_proportion)
-
-    intersection_points_lower = find_intersection_points(number_polygon_edges, top_rotation_angle, height, lower_hinge_x, lower_hinge_y, hinge_proportion, 0)
-    intersection_lower_x = intersection_points_lower[0]
-    intersection_lower_y = intersection_points_lower[1]
-    intersection_lower_z = intersection_points_lower[2]
-
-    intersection_points_upper = find_intersection_points(number_polygon_edges, top_rotation_angle, height, upper_hinge_x, upper_hinge_y, hinge_proportion, 1)
-    intersection_upper_x = intersection_points_upper[0]
-    intersection_upper_y = intersection_points_upper[1]
-    intersection_upper_z = intersection_points_upper[2]
-
     #Draw upper and lower Kresling triangles from point lists
     for m in range(2):    
         for k in range(6):#number_polygon_edges):
@@ -357,33 +317,36 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
                 points_z = [0, height, 0]
                 points_x = [lower_x[k], upper_x[k], lower_x[(k + 1) % number_polygon_edges]]
                 points_y = [lower_y[k], upper_y[k], lower_y[(k + 1) % number_polygon_edges]]
-                
-                points_hinge_x = [lower_hinge_x[(k) % len(lower_hinge_x)], intersection_lower_x[(k) % len(intersection_lower_x)], lower_hinge_x[(number_polygon_edges + k) % len(lower_hinge_x)]]
-                points_hinge_y = [lower_hinge_y[(k) % len(lower_hinge_x)], intersection_lower_y[(k) % len(intersection_lower_x)], lower_hinge_y[(number_polygon_edges + k) % len(lower_hinge_x)]]
-                points_hinge_z = [0, intersection_lower_z[k], 0]
         
             else:
                 points_z = [height, 0, height]
                 points_x = [upper_x[k],lower_x[(k + 1) % number_polygon_edges], upper_x[(k + 1) % number_polygon_edges]]
                 points_y = [upper_y[k],lower_y[(k + 1) % number_polygon_edges], upper_y[(k + 1) % number_polygon_edges]]
-
-                points_hinge_x = [upper_hinge_x[(k) % len(lower_hinge_x)], intersection_upper_x[(k) % len(intersection_upper_x)], upper_hinge_x[(number_polygon_edges + k) % len(lower_hinge_x)]]
-                points_hinge_y = [upper_hinge_y[(k) % len(lower_hinge_x)], intersection_upper_y[(k) % len(intersection_upper_x)], upper_hinge_y[(number_polygon_edges + k) % len(lower_hinge_x)]]
-                points_hinge_z = [height, intersection_upper_z[k % len(intersection_upper_z)], height]
             
-            hinge_kresling = param_Kresling(radius, points_hinge_x, points_hinge_y, points_hinge_z)
             outer_kresling = param_Kresling(radius - hinge_thickness, points_x, points_y, points_z)
             inner_kresling = param_Kresling(radius - wall_thickness, points_x, points_y, points_z)
+
+            #Generate hinges on either the inside or the outside
+            if inside_hinges:
+                inner_kresling_sketch = inner_kresling.parentSketch
+                #Flip the offset direction of the hinge plane generation based on upper or lower Kresling face
+                if m == 0:
+                    flip_value = 1
+                elif m == 1:
+                    flip_value = 0
+                hinge_loft = create_hinge_extrude(inner_kresling_sketch, hinge_offset, hinge_thickness, flip_value)
+            else:
+                outer_kresling_sketch = outer_kresling.parentSketch
+                hinge_loft = create_hinge_extrude(outer_kresling_sketch, hinge_offset, hinge_thickness, m)
+
+            hinge_bodies = hinge_loft.bodies.item(0)
+            body_list.append(hinge_bodies)
 
             if hinge_thickness < wall_thickness:
                 #Loft between interior and exterior Kresling faces, create bodies from loft features
                 outer_loft = add_loft(lofts,[outer_kresling, inner_kresling]) 
                 outer_bodies = outer_loft.bodies.item(0)
                 body_list.append(outer_bodies)
-
-            hinge_loft = add_loft(lofts,[outer_kresling, hinge_kresling]) 
-            hinge_bodies = hinge_loft.bodies.item(0)
-            body_list.append(hinge_bodies)
 
             if chamber_length > 0:
                 outer_center_kresling = param_Kresling((radius - chamber_length), points_x, points_y, points_z)
@@ -402,7 +365,7 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
         make_base(upper_x, upper_y, radius, height, 1 * wall_thickness, lofts, body_list)
         targetTop = body_list[len(body_list)-2]
         toolTop = body_list[len(body_list)-1]
-        cutCombine(targetTop, toolTop)
+        cut_combine(targetTop, toolTop)
 
     return body_list
 
@@ -414,13 +377,12 @@ ui = app.userInterface
 doc = app.documents.add(adsk.core.DocumentTypes.FusionDesignDocumentType)
 design = app.activeProduct
 
-# Create sketch, construction plane, extrude objects, and loft objects
+# Create sketch, construction plane, loft objects, and combine objects
 rootComp = design.rootComponent
 sketchObjs = rootComp.sketches
 cPlaneObjs = rootComp.constructionPlanes
-extrudeFeats = rootComp.features.extrudeFeatures
 loftFeats = rootComp.features.loftFeatures
+combineFeats = rootComp.features.combineFeatures
 
 # Make Kresling structure
 Kresling = make_Kresling_body(loftFeats, radius, wall_thickness, hinge_thickness, number_polygon_edges, height, top_rotation_angle * (math.pi/180), base_thickness, lip_thickness, hinge_proportion)
-createHingeExtrude()
