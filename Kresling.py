@@ -257,6 +257,70 @@ def cutCombine(targetBody, toolBody):
     combineInput.operation = adsk.fusion.FeatureOperations.CutFeatureOperation
     return combineFeat.add(combineInput)
 
+hinge_thicknessTEMP = 0.1
+
+def constructOffsetPlane(planeProfile, offsetDistance):
+    #create planes input
+    planeInput = cPlaneObjs.createInput()
+
+    #set offset distance for hinge thickness
+    offsetValue = adsk.core.ValueInput.createByReal(offsetDistance)
+    planeInput.setByOffset(planeProfile, offsetValue)
+
+    #create the offset construction plane
+    offsetPlane = cPlaneObjs.add(planeInput)
+
+    return offsetPlane
+
+def projectSketch(inputSketch,workingPlane):
+    projectedSketch = sketchObjs.add(workingPlane) #Make new sketch on the working plane
+
+    #Project curves of input sketch onto the working plane
+    for curve in inputSketch.sketchCurves:
+        projectedSketch.project(curve)
+ 
+    return projectedSketch
+
+def insideOffsetSketch(inputSketch, offsetDistance):
+    #Find all geometry to be offset
+    offsetGeometry = adsk.core.ObjectCollection.create()
+    inputLines = inputSketch.sketchCurves.sketchLines
+    offsetGeometry.clear()
+    [offsetGeometry.add(l) for l in inputLines]
+
+    #Define offset direction by picking a point in the center of the geometry
+    #Average the coordinate locations of all the sketch points in the geometry
+    x_tot = 0
+    y_tot = 0
+    z_tot = 0
+    for point in inputSketch.sketchPoints:
+        x_tot += point.geometry.x
+        y_tot += point.geometry.y
+        z_tot += point.geometry.z
+    totalPoints = inputSketch.sketchPoints.count
+    x_dir = x_tot / totalPoints
+    y_dir = y_tot / totalPoints
+    z_dir = z_tot / totalPoints
+    
+    offsetDir = adsk.core.Point3D.create(x_dir,y_dir,z_dir)
+
+    offsettedSketch = inputSketch.offset(offsetGeometry, offsetDir, offsetDistance)
+    
+    return offsettedSketch
+
+def extrudeProf(inputSketch,extrudeDistance):
+    extrudeProfile = inputSketch.profiles.item(1)
+    distance = adsk.core.ValueInput.createByReal(extrudeDistance)
+    extrude = extrudeFeats.addSimple(extrudeProfile, distance, adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
+    extrudeBody = extrude.bodies.item(0)
+    return extrudeBody  
+
+def createHingeExtrude():
+    constructOffsetPlane(rootComp.sketches.item(0).profiles.item(0), hinge_thicknessTEMP)
+    projSketch1 = projectSketch(rootComp.sketches.item(0),cPlaneObjs.item(0))
+    insideOffsetSketch(projSketch1,0.1)
+    extrudeProf(projSketch1, hinge_thicknessTEMP)
+    return
 
 def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_polygon_edges, height, top_rotation_angle, base_thickness, lip_thickness, hinge_proportion):
     #Create each Kresling triangle according to specified dimensions
@@ -340,7 +404,6 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
         toolTop = body_list[len(body_list)-1]
         cutCombine(targetTop, toolTop)
 
-
     return body_list
 
 ##### Main code #####
@@ -351,11 +414,13 @@ ui = app.userInterface
 doc = app.documents.add(adsk.core.DocumentTypes.FusionDesignDocumentType)
 design = app.activeProduct
 
-# Create sketch, construction plane, and loft objects
+# Create sketch, construction plane, extrude objects, and loft objects
 rootComp = design.rootComponent
 sketchObjs = rootComp.sketches
 cPlaneObjs = rootComp.constructionPlanes
+extrudeFeats = rootComp.features.extrudeFeatures
 loftFeats = rootComp.features.loftFeatures
 
 # Make Kresling structure
 Kresling = make_Kresling_body(loftFeats, radius, wall_thickness, hinge_thickness, number_polygon_edges, height, top_rotation_angle * (math.pi/180), base_thickness, lip_thickness, hinge_proportion)
+createHingeExtrude()
