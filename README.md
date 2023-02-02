@@ -22,5 +22,3 @@ To use this script to generate a Kresling module STL, you will need Autodesk Fus
 6. Navigate to the "Kresling" folder you created in step 2. 
 
 7. Select your new Kresling script and click the Run button to generate a Kresling module. 
-
-8. In order to remove the lid to ensure the Kresling prints correctly, click Combine in Autodesk Fusion 360. Choose "Body32" as the "Target Body" and "Body33" as the "Tool Body". Select "Cut" for the "Operation" and click OK.
