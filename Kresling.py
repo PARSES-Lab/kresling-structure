@@ -49,6 +49,12 @@ hinge_offset = 0.1
 #generate hinges on the inside faces of the Kresling if true, otherwise generate on the outside
 inside_hinges = True
 
+#generate hinges on the center kresling if true (hinges are always generated on outside face)
+center_hinges = False
+
+#generate hinges on the chamber walls if true
+chamber_hinges = False
+
 ratio_hinge_to_wall = 0.9
 ratio_base_to_wall = 1
 ratio_lip_to_wall = 1
@@ -145,9 +151,18 @@ def make_chamber_walls(lofts, number_chambers, outer_radius, inner_radius, first
         inner_triangle = param_Kresling(1, points_x[0], points_y[0], points_z)
         outer_triangle = param_Kresling(1, points_x[1], points_y[1], points_z)
 
-        lower_loft = add_loft(lofts,[inner_triangle,outer_triangle])
-        lower_bodies = lower_loft.bodies.item(0)
-        body_list.append(lower_bodies)
+        #Generate hinged lofts
+        if chamber_hinges:
+            kresling_sketch = inner_triangle.parentSketch
+            hinge_loft = create_hinge_extrude(kresling_sketch, hinge_offset, hinge_thickness, 0)
+            lower_bodies = hinge_loft.bodies.item(0)
+            body_list.append(lower_bodies)
+        #Generate non-hinged lofts
+        else:
+            lower_loft = add_loft(lofts,[inner_triangle,outer_triangle])
+            lower_bodies = lower_loft.bodies.item(0)
+            body_list.append(lower_bodies)
+
     return body_list 
 
 def make_chamber_points(outer_radius, second_radius, inner_radius, first_pts, second_pts, angle_count, half_inner_angle, first_rot_angle, second_rot_angle, sine_rotation):
@@ -338,7 +353,7 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
             else:
                 outer_kresling_sketch = outer_kresling.parentSketch
                 hinge_loft = create_hinge_extrude(outer_kresling_sketch, hinge_offset, hinge_thickness, m)
-
+            #Add hinge bodies to list
             hinge_bodies = hinge_loft.bodies.item(0)
             body_list.append(hinge_bodies)
 
@@ -351,7 +366,16 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
             if chamber_length > 0:
                 outer_center_kresling = param_Kresling((radius - chamber_length), points_x, points_y, points_z)
                 inner_center_kresling = param_Kresling((radius - chamber_length) - hinge_thickness, points_x, points_y, points_z)
-                  
+
+            #Generate hinged lofts on the outside of the center Kresling
+            if center_hinges:
+                outer_kresling_sketch = outer_center_kresling.parentSketch
+                hinge_loft = create_hinge_extrude(outer_kresling_sketch, hinge_offset, hinge_thickness, m)
+                #Add hinge bodies to list
+                hinge_bodies = hinge_loft.bodies.item(0)
+                body_list.append(hinge_bodies)
+            #Generate non-hinged lofts for the center Kresling
+            else:
                 center_loft = add_loft(lofts,[inner_center_kresling, outer_center_kresling])
                 center_bodies = center_loft.bodies.item(0)
                 body_list.append(center_bodies)
@@ -362,9 +386,10 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
         make_base(lower_x, lower_y, radius, 0, -1 * wall_thickness, lofts, body_list)
 
     if lip_thickness > 0:
-        make_base(upper_x, upper_y, radius, height, 1 * wall_thickness, lofts, body_list)
-        targetTop = body_list[len(body_list)-2]
-        toolTop = body_list[len(body_list)-1]
+        top_list = make_base(upper_x, upper_y, radius, height, 1 * wall_thickness, lofts, body_list)
+        #Cut top out of the Kresling to make a lip
+        targetTop = top_list[len(top_list)-2]
+        toolTop = top_list[len(top_list)-1]
         cut_combine(targetTop, toolTop)
 
     return body_list
