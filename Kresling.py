@@ -49,10 +49,10 @@ hinge_offset = 0.1
 #generate hinges on the inside faces of the Kresling if true, otherwise generate on the outside
 inside_hinges = True
 
-#generate hinges on the center kresling if true (hinges are always generated on outside face)
+#generate hinges on the center kresling if true (hinges are always generated on inside AND outside faces)
 center_hinges = False
 
-#generate hinges on the chamber walls if true
+#generate hinges on the chamber walls if true (hinges are always generated on inside AND outside faces)
 chamber_hinges = False
 
 ratio_hinge_to_wall = 0.9
@@ -153,8 +153,20 @@ def make_chamber_walls(lofts, number_chambers, outer_radius, inner_radius, first
 
         #Generate hinged lofts
         if chamber_hinges:
-            kresling_sketch = inner_triangle.parentSketch
-            hinge_loft = create_hinge_extrude(kresling_sketch, hinge_offset, hinge_thickness, 0)
+            #Find triangle in between inner and outer triangle
+            hinge_points_x = [0,0,0]
+            hinge_points_y = [0,0,0]
+            for i in range(3):
+                hinge_points_x[i] += (points_x[0][i] + points_x[1][i]) / 2
+                hinge_points_y[i] += (points_y[0][i] + points_y[1][i]) / 2
+
+            kresling_triangle = param_Kresling(1, hinge_points_x, hinge_points_y, points_z)
+            kresling_sketch = kresling_triangle.parentSketch
+            #Generate hinges on both sides
+            hinge_loft = create_hinge_extrude(kresling_sketch, hinge_offset, hinge_thickness/2, 0)
+            lower_bodies = hinge_loft.bodies.item(0)
+            body_list.append(lower_bodies)
+            hinge_loft = create_hinge_extrude(kresling_sketch, hinge_offset, hinge_thickness/2, 1)
             lower_bodies = hinge_loft.bodies.item(0)
             body_list.append(lower_bodies)
         #Generate non-hinged lofts
@@ -337,14 +349,13 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
                 points_z = [height, 0, height]
                 points_x = [upper_x[k],lower_x[(k + 1) % number_polygon_edges], upper_x[(k + 1) % number_polygon_edges]]
                 points_y = [upper_y[k],lower_y[(k + 1) % number_polygon_edges], upper_y[(k + 1) % number_polygon_edges]]
-            
-            outer_kresling = param_Kresling(radius - hinge_thickness, points_x, points_y, points_z)
-            inner_kresling = param_Kresling(radius - wall_thickness, points_x, points_y, points_z)
 
             #Generate hinges on either the inside or the outside
             if inside_hinges:
-                hinge_kresling = param_Kresling(radius, points_x, points_y, points_z)
-                hinge_kresling_sketch = hinge_kresling.parentSketch
+                #Outer kresling is radius of Kresling when hinges are inside
+                outer_kresling = param_Kresling(radius, points_x, points_y, points_z)
+                inner_kresling = param_Kresling(radius - wall_thickness + hinge_thickness, points_x, points_y, points_z)
+                hinge_kresling_sketch = inner_kresling.parentSketch
                 #Flip the offset direction of the hinge plane generation based on upper or lower Kresling face
                 if m == 0:
                     flip_value = 1
@@ -352,8 +363,11 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
                     flip_value = 0
                 hinge_loft = create_hinge_extrude(hinge_kresling_sketch, hinge_offset, hinge_thickness, flip_value)
             else:
-                outer_kresling_sketch = outer_kresling.parentSketch
-                hinge_loft = create_hinge_extrude(outer_kresling_sketch, hinge_offset, hinge_thickness, m)
+                #Outer kresling is radius of Kresling MINUS hinge thickness when hinges are outside
+                outer_kresling = param_Kresling(radius - hinge_thickness, points_x, points_y, points_z)
+                inner_kresling = param_Kresling(radius - wall_thickness, points_x, points_y, points_z)
+                hinge_kresling_sketch = outer_kresling.parentSketch
+                hinge_loft = create_hinge_extrude(hinge_kresling_sketch, hinge_offset, hinge_thickness, m)
             #Add hinge bodies to list
             hinge_bodies = hinge_loft.bodies.item(0)
             body_list.append(hinge_bodies)
@@ -365,23 +379,38 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
                 body_list.append(outer_bodies)
 
             if chamber_length > 0:
-                outer_center_kresling = param_Kresling((radius - chamber_length), points_x, points_y, points_z)
-                inner_center_kresling = param_Kresling((radius - chamber_length) - hinge_thickness, points_x, points_y, points_z)
+                #Generate hinged lofts on the inside and outside of the center Kresling
+                if center_hinges:
+                    hinge_center_kresling = param_Kresling((radius - chamber_length) - (hinge_thickness / 2), points_x, points_y, points_z)
+                    hinge_center_kresling_sketch = hinge_center_kresling.parentSketch
+                    hinge_loft = create_hinge_extrude(hinge_center_kresling_sketch, hinge_offset, hinge_thickness/2, 0)
+                    #Add hinge bodies to list
+                    hinge_bodies = hinge_loft.bodies.item(0)
+                    body_list.append(hinge_bodies)
+                    hinge_loft = create_hinge_extrude(hinge_center_kresling_sketch, hinge_offset, hinge_thickness/2, 1)
+                    #Add hinge bodies to list
+                    hinge_bodies = hinge_loft.bodies.item(0)
+                    body_list.append(hinge_bodies)
+                #Generate non-hinged lofts for the center Kresling
+                else:
+                    outer_center_kresling = param_Kresling((radius - chamber_length), points_x, points_y, points_z)
+                    inner_center_kresling = param_Kresling((radius - chamber_length) - hinge_thickness, points_x, points_y, points_z)
+                    center_loft = add_loft(lofts,[inner_center_kresling, outer_center_kresling])
+                    center_bodies = center_loft.bodies.item(0)
+                    body_list.append(center_bodies)
+    
+    #Modify chamber radii to match hinged/non-hinged inner and outer Kresling structures
+    if inside_hinges:
+        chamber_outer_radius = radius
+    else:
+        chamber_outer_radius = radius - hinge_thickness
 
-            #Generate hinged lofts on the outside of the center Kresling
-            if center_hinges:
-                outer_kresling_sketch = outer_center_kresling.parentSketch
-                hinge_loft = create_hinge_extrude(outer_kresling_sketch, hinge_offset, hinge_thickness, m)
-                #Add hinge bodies to list
-                hinge_bodies = hinge_loft.bodies.item(0)
-                body_list.append(hinge_bodies)
-            #Generate non-hinged lofts for the center Kresling
-            else:
-                center_loft = add_loft(lofts,[inner_center_kresling, outer_center_kresling])
-                center_bodies = center_loft.bodies.item(0)
-                body_list.append(center_bodies)
-
-    make_chambers(lofts,number_polygon_edges, radius-hinge_thickness, radius - chamber_length, top_rotation_angle, height, lower_x, lower_y, upper_x, upper_y)
+    if center_hinges:
+        chamber_inner_radius = (radius - chamber_length) - hinge_thickness
+    else:
+        chamber_inner_radius = radius - chamber_length
+    
+    make_chambers(lofts, number_polygon_edges, chamber_outer_radius, chamber_inner_radius, top_rotation_angle, height, lower_x, lower_y, upper_x, upper_y)
 
     if base_thickness > 0:
         make_base(lower_x, lower_y, radius, 0, -1 * wall_thickness, lofts, body_list)
