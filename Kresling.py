@@ -343,13 +343,14 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
 
             #Generate hinges on either the inside or the outside
             if inside_hinges:
-                inner_kresling_sketch = inner_kresling.parentSketch
+                hinge_kresling = param_Kresling(radius, points_x, points_y, points_z)
+                hinge_kresling_sketch = hinge_kresling.parentSketch
                 #Flip the offset direction of the hinge plane generation based on upper or lower Kresling face
                 if m == 0:
                     flip_value = 1
                 elif m == 1:
                     flip_value = 0
-                hinge_loft = create_hinge_extrude(inner_kresling_sketch, hinge_offset, hinge_thickness, flip_value)
+                hinge_loft = create_hinge_extrude(hinge_kresling_sketch, hinge_offset, hinge_thickness, flip_value)
             else:
                 outer_kresling_sketch = outer_kresling.parentSketch
                 hinge_loft = create_hinge_extrude(outer_kresling_sketch, hinge_offset, hinge_thickness, m)
