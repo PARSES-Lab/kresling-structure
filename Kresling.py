@@ -43,14 +43,14 @@ chamber_length = 1.5
 
 hinge_proportion = 0
 
-#temporary hinge definition using offset instead of proportion:
+#The distance between the original Kresling triangle and the hinge Kresling triangle
 hinge_offset = 0.1
 
 #generate hinges on the inside faces of the Kresling if true, otherwise generate on the outside
 inside_hinges = True
 
 #generate hinges on the center kresling if true (hinges are always generated on inside AND outside faces)
-center_hinges = False
+center_hinges = True
 
 #generate hinges on the chamber walls if true (hinges are always generated on inside AND outside faces)
 chamber_hinges = False
@@ -324,6 +324,25 @@ def create_hinge_extrude(original_sketch, offset_from_original, hinge_loft_thick
 
     return hinge_loft
 
+def circular_pattern(input_bodies, pattern_num): 
+        #Pattern around the y-axis
+        z_axis = rootComp.zConstructionAxis
+        
+        #Define input
+        circle_pattern_input = circlePatternFeats.createInput(input_bodies, z_axis)
+        
+        # Create patternNum of copies
+        circle_pattern_input.quantity = adsk.core.ValueInput.createByReal(pattern_num)
+        
+        # Pattern symmetrically across 360 degrees
+        circle_pattern_input.totalAngle = adsk.core.ValueInput.createByString('360 deg')
+        circle_pattern_input.isSymmetric = True
+        
+        # Create the circular pattern
+        circle_pat_feat = circlePatternFeats.add(circle_pattern_input)
+
+        return circle_pat_feat
+
 def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_polygon_edges, height, top_rotation_angle, base_thickness, lip_thickness, hinge_proportion):
     #Create each Kresling triangle according to specified dimensions
 
@@ -336,8 +355,9 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
     upper_y = generate_polygon_points(number_polygon_edges, top_rotation_angle, math.pi/2)
 
     #Draw upper and lower Kresling triangles from point lists
+    circular_pattern_bodies = adsk.core.ObjectCollection.create() #create collection to pattern
     for m in range(2):    
-        for k in range(6):#number_polygon_edges):
+        for k in range(1):
 
             if m == 0: #make upper or lower triangle, m == 0 is lower
 
@@ -371,33 +391,50 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
             #Add hinge bodies to list
             hinge_bodies = hinge_loft.bodies.item(0)
             body_list.append(hinge_bodies)
+            circular_pattern_bodies.add(hinge_bodies)
 
             if hinge_thickness < wall_thickness:
                 #Loft between interior and exterior Kresling faces, create bodies from loft features
                 outer_loft = add_loft(lofts,[outer_kresling, inner_kresling]) 
                 outer_bodies = outer_loft.bodies.item(0)
                 body_list.append(outer_bodies)
+                circular_pattern_bodies.add(outer_bodies)
 
             if chamber_length > 0:
                 #Generate hinged lofts on the inside and outside of the center Kresling
                 if center_hinges:
-                    hinge_center_kresling = param_Kresling((radius - chamber_length) - (hinge_thickness / 2), points_x, points_y, points_z)
-                    hinge_center_kresling_sketch = hinge_center_kresling.parentSketch
-                    hinge_loft = create_hinge_extrude(hinge_center_kresling_sketch, hinge_offset, hinge_thickness/2, 0)
+                    outer_center_kresling = param_Kresling((radius - chamber_length) - (hinge_thickness / 3), points_x, points_y, points_z)
+                    inner_center_kresling = param_Kresling((radius - chamber_length) - (hinge_thickness * 2 / 3), points_x, points_y, points_z)
+                    hinge_center_kresling_sketch = outer_center_kresling.parentSketch
+                    hinge_loft = create_hinge_extrude(hinge_center_kresling_sketch, hinge_offset, hinge_thickness/3, m)
                     #Add hinge bodies to list
                     hinge_bodies = hinge_loft.bodies.item(0)
                     body_list.append(hinge_bodies)
-                    hinge_loft = create_hinge_extrude(hinge_center_kresling_sketch, hinge_offset, hinge_thickness/2, 1)
+                    circular_pattern_bodies.add(hinge_bodies)
+                    if m == 0:
+                        flip_value = 1
+                    elif m == 1:
+                        flip_value = 0
+                    hinge_center_kresling_sketch = inner_center_kresling.parentSketch
+                    hinge_loft = create_hinge_extrude(hinge_center_kresling_sketch, hinge_offset, hinge_thickness/3, flip_value)
                     #Add hinge bodies to list
                     hinge_bodies = hinge_loft.bodies.item(0)
                     body_list.append(hinge_bodies)
+                    circular_pattern_bodies.add(hinge_bodies)
                 #Generate non-hinged lofts for the center Kresling
                 else:
                     outer_center_kresling = param_Kresling((radius - chamber_length), points_x, points_y, points_z)
                     inner_center_kresling = param_Kresling((radius - chamber_length) - hinge_thickness, points_x, points_y, points_z)
-                    center_loft = add_loft(lofts,[inner_center_kresling, outer_center_kresling])
-                    center_bodies = center_loft.bodies.item(0)
-                    body_list.append(center_bodies)
+                
+                #Generate center Kresling walls
+                center_loft = add_loft(lofts,[inner_center_kresling, outer_center_kresling])
+                center_bodies = center_loft.bodies.item(0)
+                body_list.append(center_bodies)
+                circular_pattern_bodies.add(hinge_bodies)
+
+    #Circular pattern all Kresling walls by the number of Kresling sides
+    patterned_kresling = circular_pattern(circular_pattern_bodies, number_polygon_edges)
+    body_list.append(patterned_kresling)
     
     #Modify chamber radii to match hinged/non-hinged inner and outer Kresling structures
     if inside_hinges:
@@ -406,7 +443,7 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
         chamber_outer_radius = radius - hinge_thickness
 
     if center_hinges:
-        chamber_inner_radius = (radius - chamber_length) - hinge_thickness
+        chamber_inner_radius = (radius - chamber_length) - hinge_thickness/3
     else:
         chamber_inner_radius = radius - chamber_length
     
@@ -438,6 +475,7 @@ sketchObjs = rootComp.sketches
 cPlaneObjs = rootComp.constructionPlanes
 loftFeats = rootComp.features.loftFeatures
 combineFeats = rootComp.features.combineFeatures
+circlePatternFeats = rootComp.features.circularPatternFeatures
 
 # Make Kresling structure
 Kresling = make_Kresling_body(loftFeats, radius, wall_thickness, hinge_thickness, number_polygon_edges, height, top_rotation_angle * (math.pi/180), base_thickness, lip_thickness, hinge_proportion)
