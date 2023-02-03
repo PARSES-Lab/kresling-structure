@@ -23,7 +23,7 @@ import math
 edge_length = 3
 height = 4.07
 number_polygon_edges = 6 
-top_rotation_angle = 31 # in degrees 
+top_rotation_angle = 30 # in degrees 
 wall_thickness = 0.14 
 chamber_length = 1.5
 
@@ -44,7 +44,7 @@ chamber_length = 1.5
 hinge_proportion = 0
 
 #The distance between the original Kresling triangle and the hinge Kresling triangle
-hinge_offset = 0.1
+hinge_offset = 0.075
 
 #generate hinges on the inside faces of the Kresling if true, otherwise generate on the outside
 inside_hinges = True
@@ -55,7 +55,7 @@ center_hinges = True
 #generate hinges on the chamber walls if true (hinges are always generated on inside AND outside faces)
 chamber_hinges = False
 
-ratio_hinge_to_wall = 0.9
+ratio_hinge_to_wall = 0.75
 ratio_base_to_wall = 1
 ratio_lip_to_wall = 1
 
@@ -430,7 +430,7 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
                 center_loft = add_loft(lofts,[inner_center_kresling, outer_center_kresling])
                 center_bodies = center_loft.bodies.item(0)
                 body_list.append(center_bodies)
-                circular_pattern_bodies.add(hinge_bodies)
+                circular_pattern_bodies.add(center_bodies)
 
     #Circular pattern all Kresling walls by the number of Kresling sides
     patterned_kresling = circular_pattern(circular_pattern_bodies, number_polygon_edges)
