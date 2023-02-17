@@ -27,6 +27,9 @@ top_rotation_angle = 30 # in degrees
 wall_thickness = 0.14 
 chamber_length = 1.5
 
+#Electrode .DXF filepath
+electrode_filepath = 'C:/Users/oz/Downloads/electrode_dxf_mm.dxf'
+
 #Ratios to hack the Kresling to increase compliance
 #Values for a standard Kresling with two lids are
 # Ratio of wall length of where the hinge angle intersects with polygon. For example, 0.1 draws the hinge point starting at 10% and 90% across the polygon
@@ -324,6 +327,28 @@ def create_hinge_extrude(original_sketch, offset_from_original, hinge_loft_thick
 
     return hinge_loft
 
+def deboss_electrode(dxf_file_path, import_sketch):
+    #Create construction plane to import on
+    import_profile = import_sketch.profiles.item(0)
+    import_plane = construct_offset_plane(import_profile, 0)
+    #Set up import on import plane
+    import_options = importManager.createDXF2DImportOptions(dxf_file_path, import_plane)
+    importManager.importToTarget(import_options, rootComp)
+    electrode_sketch = import_options.results.item(0)
+
+    #Project important geometry for constraints
+    kresling_point = electrode_sketch.project(import_sketch.sketchPoints.item(2))
+    kresling_line = electrode_sketch.project(import_sketch.sketchCurves.sketchLines.item(0))
+
+    #Constrain point
+    constraints = electrode_sketch.geometricConstraints
+    coincident_constraint = constraints.addCoincident(electrode_sketch.sketchPoints.item(17), electrode_sketch.sketchPoints.item(5))
+
+    #The order of the DXF points keeps changing, this is not a reliable method
+    # 7 points in sketch, 17 in dxf
+
+    return
+
 def circular_pattern(input_bodies, pattern_num): 
         #Pattern around the y-axis
         z_axis = rootComp.zConstructionAxis
@@ -400,6 +425,9 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
                 body_list.append(outer_bodies)
                 circular_pattern_bodies.add(outer_bodies)
 
+            #Add deboss for electrodes
+            deboss_electrode(electrode_filepath, outer_kresling.parentSketch)
+
             if chamber_length > 0:
                 #Generate hinged lofts on the inside and outside of the center Kresling
                 if center_hinges:
@@ -433,8 +461,8 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
                 circular_pattern_bodies.add(center_bodies)
 
     #Circular pattern all Kresling walls by the number of Kresling sides
-    patterned_kresling = circular_pattern(circular_pattern_bodies, number_polygon_edges)
-    body_list.append(patterned_kresling)
+    #patterned_kresling = circular_pattern(circular_pattern_bodies, number_polygon_edges)
+    #body_list.append(patterned_kresling)
     
     #Modify chamber radii to match hinged/non-hinged inner and outer Kresling structures
     if inside_hinges:
@@ -468,6 +496,9 @@ app = adsk.core.Application.get()
 ui = app.userInterface
 doc = app.documents.add(adsk.core.DocumentTypes.FusionDesignDocumentType)
 design = app.activeProduct
+
+# Set up import functions
+importManager = app.importManager
 
 # Create sketch, construction plane, loft objects, and combine objects
 rootComp = design.rootComponent
