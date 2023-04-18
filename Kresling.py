@@ -26,7 +26,8 @@ number_polygon_edges = 6
 top_rotation_angle = 30 # in degrees 
 wall_thickness = 0.1
 hinge_thickness = 0.1
-chamber_length = 0
+chamber_length = 1.5
+
 
 #Calculate hinge and base thicknesses from ratios (do not change these values)
 #hinge_thickness = wall_thickness * ratio_hinge_to_wall
@@ -110,6 +111,50 @@ def make_base(upper_x_points, upper_y_points, radius, height, thickness, lofts, 
     
     return body_list
 
+#chamber generation functions
+
+def make_chamber_points(outer_radius, second_radius, inner_radius, first_pts, second_pts, angle_count, half_inner_angle, first_rot_angle, second_rot_angle, sine_rotation):
+    points_1st = \
+        [outer_radius * first_pts[((angle_count) % number_polygon_edges)] - (outer_radius - wall_thickness / 2) * math.sin((((angle_count) % number_polygon_edges)*2 + 1) * half_inner_angle- first_rot_angle - sine_rotation), \
+        second_radius * second_pts[((angle_count) % number_polygon_edges)] - (second_radius - wall_thickness / 2) * math.sin((((angle_count) % number_polygon_edges)*2 + 1) * half_inner_angle - second_rot_angle - sine_rotation), \
+        inner_radius * first_pts[((angle_count) % number_polygon_edges)] - (inner_radius - wall_thickness / 2) * math.sin((((angle_count) % number_polygon_edges)*2 + 1) * half_inner_angle - first_rot_angle - sine_rotation)]
+
+    points_2nd = \
+        [outer_radius * first_pts[((angle_count + 1) % number_polygon_edges)] - (wall_thickness / 2) * math.sin((((angle_count + 1) % number_polygon_edges)*2 + 1) * half_inner_angle - first_rot_angle - sine_rotation) , \
+        second_radius * second_pts[((angle_count + 1) % number_polygon_edges)] - (wall_thickness / 2) * math.sin((((angle_count + 1) % number_polygon_edges)*2 + 1) * half_inner_angle - second_rot_angle - sine_rotation), \
+        inner_radius * first_pts[((angle_count + 1) % number_polygon_edges)] - (wall_thickness / 2) * math.sin((((angle_count + 1) % number_polygon_edges)*2 + 1) * half_inner_angle - first_rot_angle - sine_rotation)]
+    return [points_1st, points_2nd]
+
+def make_chamber_walls(lofts, number_chambers, outer_radius, inner_radius, first_x, second_x, first_y, second_y, points_z, first_rot_angle, second_rot_angle, half_inner_angle, body_list):
+    for item in range(number_chambers):
+        angle_count = (2 * item + number_polygon_edges - 1) 
+
+        if first_rot_angle == 0: #set whether the second radius is outer or inner depending on if it's top or bottom triangle
+            second_radius = inner_radius
+        else:
+            second_radius = outer_radius
+
+        points_x = make_chamber_points(outer_radius, second_radius, inner_radius, first_x, second_x, angle_count, half_inner_angle, first_rot_angle, second_rot_angle, 0)
+        points_y = make_chamber_points(outer_radius, second_radius, inner_radius, first_y, second_y, angle_count, half_inner_angle, first_rot_angle, second_rot_angle, math.pi/2)
+
+        inner_triangle = param_Kresling(1, points_x[0], points_y[0], points_z)
+        outer_triangle = param_Kresling(1, points_x[1], points_y[1], points_z)
+
+        lower_loft = add_loft(lofts,[inner_triangle,outer_triangle])
+        lower_bodies = lower_loft.bodies.item(0)
+        body_list.append(lower_bodies)
+    return body_list 
+
+def make_chambers(lofts, number_polygon_edges, outer_radius, inner_radius, top_rotation_angle, height, lower_x, lower_y, upper_x, upper_y):
+    body_list = []
+    number_chambers  = number_polygon_edges // 2
+    half_inner_angle = math.pi / number_polygon_edges
+
+    body_list = make_chamber_walls(lofts, number_chambers, outer_radius, inner_radius, lower_x, upper_x, lower_y, upper_y, [0, height, 0], 0, top_rotation_angle, half_inner_angle, body_list)
+    body_list = make_chamber_walls(lofts, number_chambers, outer_radius, inner_radius, upper_x, lower_x, upper_y, lower_y, [height, 0, height], top_rotation_angle, 0, half_inner_angle, body_list)
+    return body_list
+
+
 def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_polygon_edges, height, top_rotation_angle, base_thickness, lip_thickness):
     #Create each Kresling triangle according to specified dimensions
 
@@ -166,8 +211,9 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
                 center_loft = add_loft(lofts,[inner_center_kresling, outer_center_kresling])
                 center_bodies = center_loft.bodies.item(0)
                 body_list.append(center_bodies)
-
-                make_chambers(lofts,number_polygon_edges, radius-hinge_thickness, radius - chamber_length, top_rotation_angle, height, lower_x, lower_y, upper_x, upper_y)
+    
+    if chamber_length > 0:
+            make_chambers(lofts,number_polygon_edges, radius-hinge_thickness, radius - chamber_length, top_rotation_angle, height, lower_x[0], lower_y[0], upper_x[0], upper_y[0])
 
     if base_thickness > 0:
         make_base(lower_x[0], lower_y[0], radius + wall_thickness, 0, -base_thickness, lofts, body_list)
@@ -175,6 +221,7 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
     if lip_thickness > 0:
         make_base(upper_x[0], upper_y[0], radius - hinge_thickness, height, lip_thickness, lofts, body_list)
         make_base(upper_x[0], upper_y[0], radius + wall_thickness, height, lip_thickness, lofts, body_list)
+
 
     return body_list
 
