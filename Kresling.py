@@ -18,25 +18,42 @@ phi -> half_inner_angle
 import adsk.core, adsk.fusion, adsk.cam
 import math
 
+
 #Kresling dimensions 
 # all in cm
-top_rotation_angle = 30 # in degrees 
-height = 4.07
 edge_length = 3
 number_polygon_edges = 6 
-hinge_thickness = 0.05
+hinge_thickness = 0.125
+lamb = 0.75
+tube_OD = 0.5
+height_compressed = 1
 wall_thickness = 0
 chamber_length = 0
 
 #Calculate hinge and base thicknesses from ratios (do not change these values)
 #hinge_thickness = wall_thickness * ratio_hinge_to_wall
 ratio_base_to_wall = 1
-ratio_lip_to_wall = 1
+ratio_lip_to_wall = 0
+
+#calculate Kresling dimensions from parameters above
+radius = edge_length * (2 * math.sin( math.pi / number_polygon_edges ))
+half_inner_angle = math.pi / number_polygon_edges
+top_rotation_angle_compressed = 2*lamb*(math.pi/2 - half_inner_angle)
+top_rotation_angle = 2*(1-lamb)*(math.pi/2 - half_inner_angle)
+height = math.sqrt(height_compressed**2 + 2*radius**2*(math.cos(top_rotation_angle + 2*half_inner_angle) - math.cos(top_rotation_angle_compressed + 2*half_inner_angle)))
+
+min_rad = math.sqrt((height**2-height_compressed**2)/(2*(math.cos(2*half_inner_angle) - math.cos(top_rotation_angle_compressed + 2*half_inner_angle)))) +0.1
+
+'''
+#problem here is that chamber radius is high to get rotation and compression. 
+if (min_rad > (radius - chamber_length)):
+    chamber_length = 0 
+else:
+    top_rotation_angle_chamber = math.acos(((height**2-height_compressed**2)/2/(radius -chamber_length)**2+math.cos(top_rotation_angle_compressed + 2*half_inner_angle)))-2*half_inner_angle
+'''
 
 base_thickness = (wall_thickness + hinge_thickness) * ratio_base_to_wall
 lip_thickness = (wall_thickness + hinge_thickness) * ratio_lip_to_wall
-
-radius = edge_length * (2 * math.sin( math.pi / number_polygon_edges ))
 
 #general purpose functions to generate Kresling points, sketches, and lofts
 
@@ -96,7 +113,7 @@ def add_loft(loft_features,profile_obj_array):
 
 #base generation
 
-def make_base(upper_x_points, upper_y_points, radius, height, thickness, lofts, body_list):
+def make_base(upper_x_points, upper_y_points, radius, height, thickness, lofts, body_list, tube_OD):
 
     #Take exterior points and create two drawings at spacing t from each other
     lip_lower_points = gen_sketch([i * radius for i in upper_x_points], [i * radius for i in upper_y_points], [height for k in range(len(upper_x_points))])
@@ -104,9 +121,23 @@ def make_base(upper_x_points, upper_y_points, radius, height, thickness, lofts, 
 
     #Loft between two drawings to make base
     loft_lip = add_loft(lofts,[lip_lower_points,lip_upper_points])
-    
     body_K_lip = loft_lip.bodies.item(0)
     body_list.append(body_K_lip) 
+    
+    #Add holes for tubing
+    if tube_OD > 0: 
+        circle_sketch = sketchObjs.add(rootComp.xYConstructionPlane)
+        circles = circle_sketch.sketchCurves.sketchCircles
+        circles.addByCenterRadius(adsk.core.Point3D.create(0,0,0), tube_OD/2)
+        for circle_count in range(3):
+            circles.addByCenterRadius(adsk.core.Point3D.create(radius/2 * math.cos(math.pi/2 + 2*circle_count*math.pi/3),radius/2 * math.sin(math.pi/2 + 2*circle_count*math.pi/3),0), tube_OD/2)
+        
+        # Extrude holes for tubing.	
+        for circle_count in range(4):
+            extInput = extrudeFeats.createInput(circle_sketch.profiles.item(circle_count), adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
+            distance = adsk.core.ValueInput.createByReal(thickness)
+            extInput.setDistanceExtent(False, distance)
+            ext = extrudeFeats.add(extInput)
     
     return body_list
 
@@ -156,7 +187,7 @@ def make_chambers(lofts, number_polygon_edges, outer_radius, inner_radius, top_r
     return body_list
 
 
-def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_polygon_edges, height, top_rotation_angle, base_thickness, lip_thickness):
+def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_polygon_edges, height, top_rotation_angle, base_thickness, lip_thickness, tube_OD):
     #Create each Kresling triangle according to specified dimensions
 
     body_list = [] #Make an empty body list to append new bodies to
@@ -216,7 +247,7 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
             make_chambers(lofts,number_polygon_edges, radius - hinge_thickness - wall_thickness, radius - chamber_length, top_rotation_angle, height, lower_x[0], lower_y[0], upper_x[0], upper_y[0])
 
     if base_thickness > 0:
-        make_base(lower_x[0], lower_y[0], radius, 0, -base_thickness, lofts, body_list)
+        make_base(lower_x[0], lower_y[0], radius, 0, -base_thickness, lofts, body_list, tube_OD)
 
     if lip_thickness > 0:
         make_base(upper_x[0], upper_y[0], radius, height, lip_thickness, lofts, body_list)
@@ -237,6 +268,7 @@ rootComp = design.rootComponent
 sketchObjs = rootComp.sketches
 cPlaneObjs = rootComp.constructionPlanes
 loftFeats = rootComp.features.loftFeatures
+extrudeFeats = rootComp.features.extrudeFeatures
 
 # Make Kresling structure
-Kresling = make_Kresling_body(loftFeats, radius, wall_thickness, hinge_thickness, number_polygon_edges, height, top_rotation_angle * (math.pi/180), base_thickness, lip_thickness)
+Kresling = make_Kresling_body(loftFeats, radius, wall_thickness, hinge_thickness, number_polygon_edges, height, top_rotation_angle, base_thickness, lip_thickness, tube_OD)
