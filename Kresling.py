@@ -29,9 +29,6 @@ lamb = 0.75
 height_compressed = 1
 chamber_length = 1.5
 
-#Electrode .DXF filepath
-electrode_filepath = ''#'C:/Users/oz/Downloads/electrode_dxf_mm.dxf'
-
 #The distance between the original Kresling triangle and the hinge Kresling triangle
 hinge_offset = 0.075
 #this needs to be recalculated
@@ -46,8 +43,8 @@ inside_hinges = False
 chamber_hinges = False
 
 ratio_hinge_to_wall = 0.75
-ratio_base_to_wall = 0
-ratio_lip_to_wall = 0
+ratio_base_to_wall = 1
+ratio_lip_to_wall = 1
 
 ########### END USER MODIFIED PARAMETERS ############
 
@@ -121,8 +118,6 @@ def make_chambers(lofts, outer_radius, inner_radius, chamber_thickness, draw_pts
     draw_pts_y.reverse()
     upper_chamber = make_chamber_walls(lofts, outer_radius, inner_radius, chamber_thickness, draw_pts_x, draw_pts_y, draw_pts_z[1:4], chamber_bodies)
 
-    #chamber_bodies.append(lower_chamber)
-    #chamber_bodies.append(upper_chamber)
     return chamber_bodies
 
 def make_chamber_walls(lofts, outer_radius, inner_radius, chamber_thickness, draw_x, draw_y, draw_z, body_list):
@@ -140,7 +135,6 @@ def make_chamber_walls(lofts, outer_radius, inner_radius, chamber_thickness, dra
 
     front_chamber = create_hinge_extrude(chamber_parent, 0, chamber_thickness/2, 0)
     back_chamber = create_hinge_extrude(chamber_parent, 0, chamber_thickness/2, 1)
-
     body_list.append(front_chamber)
     body_list.append(back_chamber)
 
@@ -234,7 +228,6 @@ def create_hinge_extrude(original_sketch, offset_from_original, hinge_loft_thick
     #Get profile of original Kresling triangle sketch
     original_profile = original_sketch.profiles.item(0)
 
-    #Note to Ash: Is flip value behavior right?
     #Create construction plane by offsetting the original profile by the hinge thickness
     if upper_or_lower == 0: #0 is lower
         hinge_plane_offset = hinge_loft_thickness
@@ -254,28 +247,6 @@ def create_hinge_extrude(original_sketch, offset_from_original, hinge_loft_thick
     hinge_loft = add_loft(loftFeats,[original_profile, hinge_profile])
 
     return hinge_loft
-
-def deboss_electrode(dxf_file_path, import_sketch):
-    #Create construction plane to import on
-    import_profile = import_sketch.profiles.item(0)
-    import_plane = construct_offset_plane(import_profile, 0)
-    #Set up import on import plane
-    import_options = importManager.createDXF2DImportOptions(dxf_file_path, import_plane)
-    importManager.importToTarget(import_options, rootComp)
-    electrode_sketch = import_options.results.item(0)
-
-    #Project important geometry for constraints
-    kresling_point = electrode_sketch.project(import_sketch.sketchPoints.item(2))
-    kresling_line = electrode_sketch.project(import_sketch.sketchCurves.sketchLines.item(0))
-
-    #Constrain point
-    constraints = electrode_sketch.geometricConstraints
-    coincident_constraint = constraints.addCoincident(electrode_sketch.sketchPoints.item(17), electrode_sketch.sketchPoints.item(5))
-
-    #The order of the DXF points keeps changing, this is not a reliable method
-    # 7 points in sketch, 17 in dxf
-
-    return
 
 def circular_pattern(input_bodies, pattern_num): 
         #Pattern around the y-axis
@@ -313,33 +284,6 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
         draw_points_x = tri_points_x[lower_count : lower_count + 3]
         draw_points_y = tri_points_y[lower_count : lower_count + 3]
         draw_points_z = tri_points_z[lower_count : lower_count + 3]
-        
-        '''
-        #Recommend deleting this code because hinges cannot be on the inside of the module due to 3D printing constraints
-        #Generate hinges on either the inside or the outside
-        if inside_hinges:
-            #Outer kresling is radius of Kresling when hinges are inside
-            outer_kresling = param_Kresling(radius, draw_points_x, draw_points_y, draw_points_z)
-            inner_kresling = param_Kresling(radius - wall_thickness + hinge_thickness, draw_points_x, draw_points_y, draw_points_z)
-            hinge_kresling_sketch = inner_kresling.parentSketch
-            
-            #Flip the offset direction of the hinge plane generation based on upper or lower Kresling face
-            if m == 0:
-                flip_value = 1
-            elif m == 1:
-                flip_value = 0
-            Does the fix below, multiplying by -1, solve it?
-            
-           
-            hinge_loft = create_hinge_extrude(hinge_kresling_sketch, hinge_offset, hinge_thickness, -1 * lower_count)
-
-        else:
-            #Outer kresling is radius of Kresling MINUS hinge thickness when hinges are outside
-            outer_kresling = param_Kresling(radius - hinge_thickness, draw_points_x, draw_points_y, draw_points_z)
-            inner_kresling = param_Kresling(radius - wall_thickness, draw_points_x, draw_points_y, draw_points_z)
-            hinge_kresling_sketch = outer_kresling.parentSketch
-            hinge_loft = create_hinge_extrude(hinge_kresling_sketch, hinge_offset, hinge_thickness, lower_count)
-        '''
 
         outer_kresling = param_Kresling(radius - hinge_thickness, draw_points_x, draw_points_y, draw_points_z)
         inner_kresling = param_Kresling(radius - wall_thickness, draw_points_x, draw_points_y, draw_points_z)
@@ -357,10 +301,6 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
             outer_bodies = outer_loft.bodies.item(0)
             body_list.append(outer_bodies)
             circular_pattern_bodies.add(outer_bodies)
-
-        if electrode_filepath != '':
-            #Add deboss for electrodes
-            deboss_electrode(electrode_filepath, outer_kresling.parentSketch)
         
         if chamber_length > 0:
             outer_center_kresling = param_Kresling((radius - chamber_length), draw_points_x, draw_points_y, draw_points_z)
@@ -371,34 +311,6 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
             center_bodies = center_loft.bodies.item(0)
             body_list.append(center_bodies)
             circular_pattern_bodies.add(center_bodies)
-
-            '''
-            #Recommend deleting code below since the chambers will always be printed with thinnest possible walls, so no hinges
-            #Generate hinged lofts on the inside and outside of the center Kresling
-            if center_hinges:
-                outer_center_kresling = param_Kresling((radius - chamber_length) - (hinge_thickness / 3), points_x, points_y, points_z)
-                inner_center_kresling = param_Kresling((radius - chamber_length) - (hinge_thickness * 2 / 3), points_x, points_y, points_z)
-                hinge_center_kresling_sketch = outer_center_kresling.parentSketch
-                hinge_loft = create_hinge_extrude(hinge_center_kresling_sketch, hinge_offset, hinge_thickness/3, lower_count)
-                #Add hinge bodies to list
-                hinge_bodies = hinge_loft.bodies.item(0)
-                body_list.append(hinge_bodies)
-                circular_pattern_bodies.add(hinge_bodies)
-                if lower_count == 0:
-                    flip_value = 1
-                elif lower_count == 1:
-                    flip_value = 0
-                hinge_center_kresling_sketch = inner_center_kresling.parentSketch
-                hinge_loft = create_hinge_extrude(hinge_center_kresling_sketch, hinge_offset, hinge_thickness/3, flip_value)
-                #Add hinge bodies to list
-                hinge_bodies = hinge_loft.bodies.item(0)
-                body_list.append(hinge_bodies)
-                circular_pattern_bodies.add(hinge_bodies)
-            #Generate non-hinged lofts for the center Kresling
-            else:
-                outer_center_kresling = param_Kresling((radius - chamber_length), points_x, points_y, points_z)
-                inner_center_kresling = param_Kresling((radius - chamber_length) - hinge_thickness, points_x, points_y, points_z)
-            '''
         
         #### Base and lip body generation
 
@@ -408,47 +320,38 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
         base_points_y.append(0)
         
         if lower_count == 0 and base_thickness > 0:
+            base_points_x = tri_points_x[0::2]
+            base_points_y = tri_points_y[0::2]
+            base_points_x.append(0)
+            base_points_y.append(0)
             base_body = make_base(base_points_x, base_points_y, radius, 0, -1 * wall_thickness, lofts, body_list)
             circular_pattern_bodies.add(base_body)
         
         if lower_count == 1 and lip_thickness > 0:
+            base_points_x = tri_points_x[1::2]
+            base_points_y = tri_points_y[1::2]
+            base_points_x.append(0)
+            base_points_y.append(0)
             target_lip = make_base(base_points_x, base_points_y, radius, height, wall_thickness, lofts, body_list)
             tool_lip = make_base(base_points_x, base_points_y, radius - wall_thickness, height, wall_thickness, lofts, body_list)
 
             #Cut top out of the Kresling to make a lip
-            cut_lip = cut_combine(target_lip, tool_lip)
-            #circular_pattern_bodies.add(cut_lip)
-            #Note to Ash: Adding the lip is failing for right now, returns a feature and not a body...unsure how to proceed.
+            cut_combine(target_lip, tool_lip)
+            circular_pattern_bodies.add(target_lip)
         
     #Circular pattern all bodies by the number of Kresling polygon edges
     patterned_kresling = circular_pattern(circular_pattern_bodies, number_polygon_edges)
     body_list.append(patterned_kresling)
     
-    '''
-    #Again recommending deletion since hinges will always be on the outside
-    if inside_hinges:
-        chamber_outer_radius = radius
-    else:
-        chamber_outer_radius = radius - hinge_thickness
-
-    if center_hinges:
-        chamber_inner_radius = (radius - chamber_length) - hinge_thickness/3
-    else:
-        chamber_inner_radius = radius - chamber_length
-    
-    make_chambers(lofts, number_polygon_edges, chamber_outer_radius, chamber_inner_radius, top_rotation_angle, height, lower_x, lower_y, upper_x, upper_y)
-    '''
-    #Note to Ash: Circular pattern is not working with the chambers. Can you take a look?
-    chamber_body_list = []
-    circular_chamber_bodies = adsk.core.ObjectCollection.create()
+    circular_chamber_bodies = adsk.core.ObjectCollection.create() #create collection to pattern
     chamber_bodies = make_chambers(lofts, radius - wall_thickness, radius - chamber_length, wall_thickness, tri_points_x, tri_points_y, tri_points_z)
-    chamber_body_list.append(chamber_bodies.bodies.item(0))
-    circular_chamber_bodies.add(chamber_body_list)
-    circular_pattern(circular_chamber_bodies, 3)
-    body_list.append(patterned_kresling)
-
     
+    for chamberBody in chamber_bodies:
+        circular_chamber_bodies.add(chamberBody.bodies.item(0))
+    circular_chambers = circular_pattern(circular_chamber_bodies, 3)
 
+    body_list.append(circular_chambers)
+    
     return body_list
 
 ##### Main code #####
