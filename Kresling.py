@@ -124,7 +124,7 @@ def createTubing(height, number_polygon_edges, top_rotation_angle, thickness, tu
         #circle lips
         extrudeCircles.addByCenterRadius(adsk.core.Point3D.create(circleX,circleY,0), tube_OD/2 + thickness)
 
-    circleBodies = []
+    circleBodies = adsk.core.ObjectCollection.create()
 
     #Extrude lips for tubing
     for circle_count in range(4):
@@ -133,7 +133,7 @@ def createTubing(height, number_polygon_edges, top_rotation_angle, thickness, tu
         extInput.setDistanceExtent(False, distance)
         ext = extrudeFeats.add(extInput)
         extBody = ext.bodies.item(0)
-        circleBodies.append(extBody)
+        circleBodies.add(extBody)
 
     #Cut circles for tubing
     for circle_count in range(4):
@@ -203,6 +203,12 @@ def cut_combine(target_body, tool_body, keep_body):
     #Keep or discard tool body
     combine_input.isKeepToolBodies = keep_body
     combine_input.operation = adsk.fusion.FeatureOperations.CutFeatureOperation
+    return combineFeats.add(combine_input)
+
+def combine_bodies(target_body, tool_body_list):
+    #target_body is a single body, tool_body_list is an Object Collection
+    combine_input: adsk.fusion.CombineFeatureInput = combineFeats.createInput(target_body, tool_body_list)
+    combine_input.operation = adsk.fusion.FeatureOperations.JoinFeatureOperation
     return combineFeats.add(combine_input)
 
 def construct_offset_plane(plane_profile, offset_distance):
@@ -318,7 +324,7 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
 
     #Draw upper and lower Kresling triangles from point lists
     circular_pattern_bodies = adsk.core.ObjectCollection.create() #create collection to pattern
-
+    
     for lower_count in range(2):    
         #draw Kresling polygons for bottom of module, then top of module
         draw_points_x = tri_points_x[lower_count : lower_count + 3]
@@ -381,15 +387,28 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
 
             #Make lid
             if keepLid:
-                circular_pattern_bodies.add(tool_lip)
+                circular_pattern_lid = adsk.core.ObjectCollection.create() #create collection to pattern lid
+                circular_pattern_lid.add(tool_lip)
+
+                #Circular pattern lid and combine the pieces
+                patterned_lid = circular_pattern(circular_pattern_lid, number_polygon_edges)
+                patterned_lid_bodies = adsk.core.ObjectCollection.create()
+                for item_count in range(patterned_lid.bodies.count):
+                    patterned_lid_bodies.add(patterned_lid.bodies.item(item_count))
+                combined_lid = combine_bodies(tool_lip, patterned_lid_bodies)
+
+                #Cut tubing
+                if tube_OD > 0:
+                    tubing_bodies = createTubing(height, number_polygon_edges, top_rotation_angle, wall_thickness, tube_OD)
+                    #Combine all lid bodies into one
+                    combined_tube_lid = combine_bodies(combined_lid.bodies.item(0), tubing_bodies)
+                    body_list.append(combined_tube_lid.bodies.item(0))
+                else:
+                    body_list.append(combined_lid.bodies.item(0))
         
     #Circular pattern all bodies by the number of Kresling polygon edges
     patterned_kresling = circular_pattern(circular_pattern_bodies, number_polygon_edges)
     body_list.append(patterned_kresling)
-
-    #Cut tubing
-    if keepLid and tube_OD > 0:
-        createTubing(height, number_polygon_edges, top_rotation_angle, wall_thickness, tube_OD)
     
     circular_chamber_bodies = adsk.core.ObjectCollection.create() #create collection to pattern
     chamber_bodies = make_chambers(lofts, radius - wall_thickness, radius - chamber_length, wall_thickness, tri_points_x, tri_points_y, tri_points_z)
