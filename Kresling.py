@@ -33,14 +33,9 @@ chamber_length = 1.5
 hinge_offset = 0.075
 #this needs to be recalculated
 
-#generate hinges on the inside faces of the Kresling if true, otherwise generate on the outside
-inside_hinges = False
-
-#generate hinges on the center kresling if true (hinges are always generated on inside AND outside faces)
-#center_hinges = True
-
-#generate hinges on the chamber walls if true (hinges are always generated on inside AND outside faces)
-chamber_hinges = False
+#Generate lid if true, otherwise generate Kresling without the lid
+keepLid = True
+tube_OD = 0.5
 
 ratio_hinge_to_wall = 0.75
 ratio_base_to_wall = 1
@@ -105,7 +100,49 @@ def make_base(x_points, y_points, radius, height, thickness, lofts, body_list):
     base_body = base_loft.bodies.item(0)
     body_list.append(base_body) 
 
-    return base_body    
+    return base_body  
+
+def createTubing(height, number_polygon_edges, top_rotation_angle, thickness, tube_OD):
+    #Add holes for tubing
+    #create offset plane from XY that's equal to the height of the Kresling
+    top_plane = construct_offset_plane(rootComp.xYConstructionPlane, height)
+    #sketch circles
+    cut_circle_sketch = sketchObjs.add(top_plane)
+    extrude_circle_sketch = sketchObjs.add(top_plane)
+    cutCircles = cut_circle_sketch.sketchCurves.sketchCircles
+    extrudeCircles = extrude_circle_sketch.sketchCurves.sketchCircles
+    #center circle
+    cutCircles.addByCenterRadius(adsk.core.Point3D.create(0,0,0), tube_OD/2)
+    extrudeCircles.addByCenterRadius(adsk.core.Point3D.create(0,0,0), tube_OD/2 + thickness)
+    #outside circles
+    circleAngle = 2*math.pi/number_polygon_edges - top_rotation_angle
+    for circle_count in range(3):
+        #circle cutouts
+        circleX = 2*radius/3 * math.cos(circleAngle + circle_count*2*math.pi/3)
+        circleY = 2*radius/3 * math.sin(circleAngle + circle_count*2*math.pi/3)
+        cutCircles.addByCenterRadius(adsk.core.Point3D.create(circleX,circleY,0), tube_OD/2)
+        #circle lips
+        extrudeCircles.addByCenterRadius(adsk.core.Point3D.create(circleX,circleY,0), tube_OD/2 + thickness)
+
+    circleBodies = []
+
+    #Extrude lips for tubing
+    for circle_count in range(4):
+        extInput = extrudeFeats.createInput(extrude_circle_sketch.profiles.item(circle_count), adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
+        distance = adsk.core.ValueInput.createByReal(thickness*2)
+        extInput.setDistanceExtent(False, distance)
+        ext = extrudeFeats.add(extInput)
+        extBody = ext.bodies.item(0)
+        circleBodies.append(extBody)
+
+    #Cut circles for tubing
+    for circle_count in range(4):
+        cutInput = extrudeFeats.createInput(cut_circle_sketch.profiles.item(circle_count), adsk.fusion.FeatureOperations.CutFeatureOperation)
+        distance = adsk.core.ValueInput.createByReal(thickness*2)
+        cutInput.setDistanceExtent(False, distance)
+        ext = extrudeFeats.add(cutInput)
+    
+    return circleBodies
 
 def make_chambers(lofts, outer_radius, inner_radius, chamber_thickness, draw_pts_x, draw_pts_y, draw_pts_z):
     chamber_bodies = []
@@ -158,11 +195,13 @@ def param_Kresling(radius, points_x, points_y, points_z):
     Kresling_profile = gen_sketch(points_x_parameterized, points_y_parameterized, points_z)
     return Kresling_profile
 
-def cut_combine(target_body, tool_body):
-    #Cut the tool body out of the target body and discard tool body
+def cut_combine(target_body, tool_body, keep_body):
+    #Cut the tool body out of the target body
     tools = adsk.core.ObjectCollection.create()
     tools.add(tool_body)
     combine_input: adsk.fusion.CombineFeatureInput = combineFeats.createInput(target_body, tools)
+    #Keep or discard tool body
+    combine_input.isKeepToolBodies = keep_body
     combine_input.operation = adsk.fusion.FeatureOperations.CutFeatureOperation
     return combineFeats.add(combine_input)
 
@@ -279,6 +318,7 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
 
     #Draw upper and lower Kresling triangles from point lists
     circular_pattern_bodies = adsk.core.ObjectCollection.create() #create collection to pattern
+
     for lower_count in range(2):    
         #draw Kresling polygons for bottom of module, then top of module
         draw_points_x = tri_points_x[lower_count : lower_count + 3]
@@ -336,12 +376,20 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
             tool_lip = make_base(base_points_x, base_points_y, radius - wall_thickness, height, wall_thickness, lofts, body_list)
 
             #Cut top out of the Kresling to make a lip
-            cut_combine(target_lip, tool_lip)
+            cut_combine(target_lip, tool_lip, keepLid)
             circular_pattern_bodies.add(target_lip)
+
+            #Make lid
+            if keepLid:
+                circular_pattern_bodies.add(tool_lip)
         
     #Circular pattern all bodies by the number of Kresling polygon edges
     patterned_kresling = circular_pattern(circular_pattern_bodies, number_polygon_edges)
     body_list.append(patterned_kresling)
+
+    #Cut tubing
+    if keepLid and tube_OD > 0:
+        createTubing(height, number_polygon_edges, top_rotation_angle, wall_thickness, tube_OD)
     
     circular_chamber_bodies = adsk.core.ObjectCollection.create() #create collection to pattern
     chamber_bodies = make_chambers(lofts, radius - wall_thickness, radius - chamber_length, wall_thickness, tri_points_x, tri_points_y, tri_points_z)
