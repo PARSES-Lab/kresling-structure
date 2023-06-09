@@ -33,8 +33,13 @@ chamber_length = 1.5
 hinge_offset = 0.075
 #this needs to be recalculated
 
+#Collar dimensions
+collar_height = 0.55
+collar_ratio = 0.25/0.55
+collar_offset = wall_thickness * 2
+
 #Generate lid if true, otherwise generate Kresling without the lid
-keepLid = True
+keepLid = False
 tube_OD = 0.5
 
 ratio_hinge_to_wall = 0.75
@@ -101,6 +106,59 @@ def make_base(x_points, y_points, radius, height, thickness, lofts, body_list):
     body_list.append(base_body) 
 
     return base_body  
+
+def make_collar(x_points, y_points, radius, height, thickness, collar_height, collar_ratio, collar_offset, lofts, body_list):
+
+    #Define the outer points of the quadrilateral of the collar
+    x_coord = [i * radius for i in x_points]
+    y_coord = [i * radius for i in y_points]
+
+    ## LOWER QUADRILATERAL COORDINATES ##
+    #Define z height
+    z_coord_bottom = [height for k in range(4)]
+
+    #Define the inner points of the lower quadrilateral of the collar
+    distance_ratio_bottom = (radius - thickness) / radius
+    x_inner_bottom = [i * distance_ratio_bottom for i in reversed(x_coord)]
+    y_inner_bottom = [i * distance_ratio_bottom for i in reversed(y_coord)]
+
+    #Consolidate coordinates
+    x_coord_bottom = x_coord + x_inner_bottom
+    y_coord_bottom = y_coord + y_inner_bottom
+
+    ## MIDDLE AND UPPER QUADRILATERAL COORDINATES
+    #Define z height
+    z_coord_middle = [height + (collar_height * collar_ratio) for k in range(4)]
+    z_coord_top = [height + collar_height for k in range(4)]
+
+    #Define the inner points of the upper quadrilaterals of the collar
+    distance_ratio_upper = (radius - collar_offset) / radius
+    x_inner_upper = [i * distance_ratio_upper for i in reversed(x_coord)]
+    y_inner_upper = [i * distance_ratio_upper for i in reversed(y_coord)]
+
+    #Consolidate coordinates
+    x_coord_upper = x_coord + x_inner_upper
+    y_coord_upper = y_coord + y_inner_upper
+
+    #Draw quadrilaterals
+    bottom_quad = gen_sketch(x_coord_bottom, y_coord_bottom, z_coord_bottom)
+    middle_quad = gen_sketch(x_coord_upper, y_coord_upper, z_coord_middle)
+    top_quad = gen_sketch(x_coord_upper, y_coord_upper, z_coord_top)
+
+    #Loft quadrilaterials
+    lower_loft = add_loft(lofts,[bottom_quad, middle_quad])
+    lower_body = lower_loft.bodies.item(0)
+    upper_loft = add_loft(lofts,[middle_quad, top_quad])
+    upper_body = upper_loft.bodies.item(0)
+
+    #Combine into one collar body
+    tools = adsk.core.ObjectCollection.create()
+    tools.add(upper_body)
+    combined_collar = combine_bodies(lower_body, tools)
+    combined_collar_body = combined_collar.bodies.item(0)
+    body_list.append(combined_collar_body)
+
+    return combined_collar_body
 
 def createTubing(height, number_polygon_edges, top_rotation_angle, thickness, tube_OD):
     #Add holes for tubing
@@ -312,7 +370,7 @@ def circular_pattern(input_bodies, pattern_num):
 
         return circle_pat_feat
 
-def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_polygon_edges, height, top_rotation_angle, base_thickness, lip_thickness):
+def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_polygon_edges, height, top_rotation_angle, base_thickness, lip_thickness, collar_height):
     #Create each Kresling triangle according to specified dimensions
 
     body_list = [] #Make an empty body list to append new bodies to
@@ -358,7 +416,7 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
             body_list.append(center_bodies)
             circular_pattern_bodies.add(center_bodies)
         
-        #### Base and lip body generation
+        #### Base, lip, and collar body generation
 
         base_points_x = tri_points_x[0::2]
         base_points_y = tri_points_y[0::2]
@@ -373,13 +431,26 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
             base_body = make_base(base_points_x, base_points_y, radius, 0, -1 * wall_thickness, lofts, body_list)
             circular_pattern_bodies.add(base_body)
         
+        if collar_height <= 0:
+            #Generate lid at the Kresling height if there is no collar
+            lid_height = height
+        else:
+            #Make collar if collar height > 0
+            collar_points_x = tri_points_x[1::2]
+            collar_points_y = tri_points_y[1::2]
+            collar_body = make_collar(collar_points_x, collar_points_y, radius, height, wall_thickness, collar_height, collar_ratio, collar_offset, lofts, body_list)
+            circular_pattern_bodies.add(collar_body)
+            
+            #Generate lid above the collar
+            lid_height = height + collar_height
+
         if lower_count == 1 and lip_thickness > 0:
             base_points_x = tri_points_x[1::2]
             base_points_y = tri_points_y[1::2]
             base_points_x.append(0)
             base_points_y.append(0)
-            target_lip = make_base(base_points_x, base_points_y, radius, height, wall_thickness, lofts, body_list)
-            tool_lip = make_base(base_points_x, base_points_y, radius - wall_thickness, height, wall_thickness, lofts, body_list)
+            target_lip = make_base(base_points_x, base_points_y, radius, lid_height, wall_thickness, lofts, body_list)
+            tool_lip = make_base(base_points_x, base_points_y, radius - wall_thickness, lid_height, wall_thickness, lofts, body_list)
 
             #Cut top out of the Kresling to make a lip
             cut_combine(target_lip, tool_lip, keepLid)
@@ -399,7 +470,7 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
 
                 #Cut tubing
                 if tube_OD > 0:
-                    tubing_bodies = createTubing(height, number_polygon_edges, top_rotation_angle, wall_thickness, tube_OD)
+                    tubing_bodies = createTubing(lid_height, number_polygon_edges, top_rotation_angle, wall_thickness, tube_OD)
                     #Combine all lid bodies into one
                     combined_tube_lid = combine_bodies(combined_lid.bodies.item(0), tubing_bodies)
                     body_list.append(combined_tube_lid.bodies.item(0))
@@ -442,4 +513,4 @@ circlePatternFeats = rootComp.features.circularPatternFeatures
 extrudeFeats = rootComp.features.extrudeFeatures
 
 # Make Kresling structure
-Kresling = make_Kresling_body(loftFeats, radius, wall_thickness, hinge_thickness, number_polygon_edges, height, top_rotation_angle, base_thickness, lip_thickness)
+Kresling = make_Kresling_body(loftFeats, radius, wall_thickness, hinge_thickness, number_polygon_edges, height, top_rotation_angle, base_thickness, lip_thickness, collar_height)
