@@ -37,9 +37,11 @@ hinge_offset = 0.075
 collar_height = 0.55
 collar_ratio = 0.25/0.55
 collar_offset = wall_thickness * 2
+gen_collar_holes = True
+gen_symmetric_collars = True
 
 #Generate lid if true, otherwise generate Kresling without the lid
-keepLid = False
+keepLid = True
 tube_OD = 0.5
 
 ratio_hinge_to_wall = 0.75
@@ -107,7 +109,7 @@ def make_base(x_points, y_points, radius, height, thickness, lofts, body_list):
 
     return base_body  
 
-def make_collar(x_points, y_points, radius, height, thickness, collar_height, collar_ratio, collar_offset, lofts, body_list):
+def make_collar(x_points, y_points, radius, height, thickness, collar_height, collar_ratio, collar_offset, gen_collar_holes, lofts, body_list):
 
     #Define the outer points of the quadrilateral of the collar
     x_coord = [i * radius for i in x_points]
@@ -128,8 +130,10 @@ def make_collar(x_points, y_points, radius, height, thickness, collar_height, co
 
     ## MIDDLE AND UPPER QUADRILATERAL COORDINATES
     #Define z height
-    z_coord_middle = [height + (collar_height * collar_ratio) for k in range(4)]
-    z_coord_top = [height + collar_height for k in range(4)]
+    middle_height = height + (collar_height * collar_ratio)
+    top_height = height + collar_height
+    z_coord_middle = [middle_height] * 4
+    z_coord_top = [top_height] * 4
 
     #Define the inner points of the upper quadrilaterals of the collar
     distance_ratio_upper = (radius - collar_offset) / radius
@@ -158,6 +162,30 @@ def make_collar(x_points, y_points, radius, height, thickness, collar_height, co
     combined_collar_body = combined_collar.bodies.item(0)
     body_list.append(combined_collar_body)
 
+    #GENERATE HOLES IF NEEDED
+    if gen_collar_holes:
+        #Find the point in the middle of the collar
+        x_coord_hole = sum(x_coord)/len(x_coord) * 0 #strange behavior when this is not zero
+        y_coord_hole = sum(y_coord)/len(y_coord) 
+        z_coord_hole = (middle_height + top_height)/2
+        hole_radius = (top_height - middle_height)/2
+
+        #Find circle plane
+        hole_plane_sketch = gen_sketch(x_coord * 2, y_coord * 2, [height, height] + [height + collar_height] * 2)
+        hole_plane = construct_offset_plane(hole_plane_sketch, 0)
+
+        # #Sketch circle
+        hole_sketch = sketchObjs.add(hole_plane)
+        hole_sketch_circle = hole_sketch.sketchCurves.sketchCircles
+        hole_coordinates = hole_sketch.modelToSketchSpace(adsk.core.Point3D.create(x_coord_hole, y_coord_hole, z_coord_hole))
+        cut_hole = hole_sketch_circle.addByCenterRadius(hole_coordinates, hole_radius)
+
+        #Extrude circle
+        cut_input = extrudeFeats.createInput(hole_sketch.profiles.item(0), adsk.fusion.FeatureOperations.CutFeatureOperation)
+        cut_input.setOneSideExtent(adsk.fusion.ThroughAllExtentDefinition.create(), adsk.fusion.ExtentDirections.NegativeExtentDirection)
+        cut_input.participantBodies = body_list
+        ext = extrudeFeats.add(cut_input)
+
     return combined_collar_body
 
 def createTubing(height, number_polygon_edges, top_rotation_angle, thickness, tube_OD):
@@ -167,40 +195,40 @@ def createTubing(height, number_polygon_edges, top_rotation_angle, thickness, tu
     #sketch circles
     cut_circle_sketch = sketchObjs.add(top_plane)
     extrude_circle_sketch = sketchObjs.add(top_plane)
-    cutCircles = cut_circle_sketch.sketchCurves.sketchCircles
-    extrudeCircles = extrude_circle_sketch.sketchCurves.sketchCircles
+    cut_circles = cut_circle_sketch.sketchCurves.sketchCircles
+    extrude_circles = extrude_circle_sketch.sketchCurves.sketchCircles
     #center circle
-    cutCircles.addByCenterRadius(adsk.core.Point3D.create(0,0,0), tube_OD/2)
-    extrudeCircles.addByCenterRadius(adsk.core.Point3D.create(0,0,0), tube_OD/2 + thickness)
+    cut_circles.addByCenterRadius(adsk.core.Point3D.create(0,0,0), tube_OD/2)
+    extrude_circles.addByCenterRadius(adsk.core.Point3D.create(0,0,0), tube_OD/2 + thickness)
     #outside circles
     circleAngle = 2*math.pi/number_polygon_edges - top_rotation_angle
     for circle_count in range(3):
         #circle cutouts
         circleX = 2*radius/3 * math.cos(circleAngle + circle_count*2*math.pi/3)
         circleY = 2*radius/3 * math.sin(circleAngle + circle_count*2*math.pi/3)
-        cutCircles.addByCenterRadius(adsk.core.Point3D.create(circleX,circleY,0), tube_OD/2)
+        cut_circles.addByCenterRadius(adsk.core.Point3D.create(circleX,circleY,0), tube_OD/2)
         #circle lips
-        extrudeCircles.addByCenterRadius(adsk.core.Point3D.create(circleX,circleY,0), tube_OD/2 + thickness)
+        extrude_circles.addByCenterRadius(adsk.core.Point3D.create(circleX,circleY,0), tube_OD/2 + thickness)
 
-    circleBodies = adsk.core.ObjectCollection.create()
+    circle_bodies = adsk.core.ObjectCollection.create()
 
     #Extrude lips for tubing
     for circle_count in range(4):
-        extInput = extrudeFeats.createInput(extrude_circle_sketch.profiles.item(circle_count), adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
+        ext_input = extrudeFeats.createInput(extrude_circle_sketch.profiles.item(circle_count), adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
         distance = adsk.core.ValueInput.createByReal(thickness*2)
-        extInput.setDistanceExtent(False, distance)
-        ext = extrudeFeats.add(extInput)
-        extBody = ext.bodies.item(0)
-        circleBodies.add(extBody)
+        ext_input.setDistanceExtent(False, distance)
+        ext = extrudeFeats.add(ext_input)
+        ext_body = ext.bodies.item(0)
+        circle_bodies.add(ext_body)
 
     #Cut circles for tubing
     for circle_count in range(4):
-        cutInput = extrudeFeats.createInput(cut_circle_sketch.profiles.item(circle_count), adsk.fusion.FeatureOperations.CutFeatureOperation)
+        cut_input = extrudeFeats.createInput(cut_circle_sketch.profiles.item(circle_count), adsk.fusion.FeatureOperations.CutFeatureOperation)
         distance = adsk.core.ValueInput.createByReal(thickness*2)
-        cutInput.setDistanceExtent(False, distance)
-        ext = extrudeFeats.add(cutInput)
+        cut_input.setDistanceExtent(False, distance)
+        ext = extrudeFeats.add(cut_input)
     
-    return circleBodies
+    return circle_bodies
 
 def make_chambers(lofts, outer_radius, inner_radius, chamber_thickness, draw_pts_x, draw_pts_y, draw_pts_z):
     chamber_bodies = []
@@ -268,6 +296,13 @@ def combine_bodies(target_body, tool_body_list):
     combine_input: adsk.fusion.CombineFeatureInput = combineFeats.createInput(target_body, tool_body_list)
     combine_input.operation = adsk.fusion.FeatureOperations.JoinFeatureOperation
     return combineFeats.add(combine_input)
+
+def mirror_bodies(mirror_plane, mirror_bodies):
+    #tool_body_list is an Object Collection
+    mirror_input = mirrorFeats.createInput(mirror_bodies, mirror_plane)
+    mirrored_body = mirrorFeats.add(mirror_input)
+    return mirrored_body
+
 
 def construct_offset_plane(plane_profile, offset_distance):
     #create planes input
@@ -423,7 +458,7 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
         base_points_x.append(0)
         base_points_y.append(0)
         
-        if lower_count == 0 and base_thickness > 0:
+        if lower_count == 0 and base_thickness > 0 and gen_symmetric_collars == False:
             base_points_x = tri_points_x[0::2]
             base_points_y = tri_points_y[0::2]
             base_points_x.append(0)
@@ -438,8 +473,18 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
             #Make collar if collar height > 0
             collar_points_x = tri_points_x[1::2]
             collar_points_y = tri_points_y[1::2]
-            collar_body = make_collar(collar_points_x, collar_points_y, radius, height, wall_thickness, collar_height, collar_ratio, collar_offset, lofts, body_list)
+            collar_body = make_collar(collar_points_x, collar_points_y, radius, height, wall_thickness, collar_height, collar_ratio, collar_offset, gen_collar_holes, lofts, body_list)
             circular_pattern_bodies.add(collar_body)
+
+            #Make mirrored collar
+            if lower_count == 0 and gen_symmetric_collars:
+                #Mirror plane
+                collar_mirror_plane = construct_offset_plane(rootComp.xYConstructionPlane, height/2)
+                #Mirror collar body
+                collar_mirror_bodies = adsk.core.ObjectCollection.create()
+                collar_mirror_bodies.add(collar_body)
+                mirrored_collar_body = mirror_bodies(collar_mirror_plane, collar_mirror_bodies).bodies.item(0)
+                circular_pattern_bodies.add(mirrored_collar_body)
             
             #Generate lid above the collar
             lid_height = height + collar_height
@@ -456,6 +501,13 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
             cut_combine(target_lip, tool_lip, keepLid)
             circular_pattern_bodies.add(target_lip)
 
+            #Make mirrored lip for mirrored collar
+            if gen_symmetric_collars:
+                lip_mirror_bodies = adsk.core.ObjectCollection.create()
+                lip_mirror_bodies.add(target_lip)
+                mirrored_lip_body = mirror_bodies(collar_mirror_plane, lip_mirror_bodies).bodies.item(0)
+                circular_pattern_bodies.add(mirrored_lip_body)
+
             #Make lid
             if keepLid:
                 circular_pattern_lid = adsk.core.ObjectCollection.create() #create collection to pattern lid
@@ -467,6 +519,13 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
                 for item_count in range(patterned_lid.bodies.count):
                     patterned_lid_bodies.add(patterned_lid.bodies.item(item_count))
                 combined_lid = combine_bodies(tool_lip, patterned_lid_bodies)
+                combined_lid_body = combined_lid.bodies.item(0)
+
+                #Make mirrored lid for mirrored collar
+                if gen_symmetric_collars:
+                    lid_mirror_bodies = adsk.core.ObjectCollection.create()
+                    lid_mirror_bodies.add(combined_lid_body)
+                    mirrored_lid_body = mirror_bodies(collar_mirror_plane, lid_mirror_bodies).bodies.item(0)
 
                 #Cut tubing
                 if tube_OD > 0:
@@ -511,6 +570,7 @@ loftFeats = rootComp.features.loftFeatures
 combineFeats = rootComp.features.combineFeatures
 circlePatternFeats = rootComp.features.circularPatternFeatures
 extrudeFeats = rootComp.features.extrudeFeatures
+mirrorFeats = rootComp.features.mirrorFeatures
 
 # Make Kresling structure
 Kresling = make_Kresling_body(loftFeats, radius, wall_thickness, hinge_thickness, number_polygon_edges, height, top_rotation_angle, base_thickness, lip_thickness, collar_height)
