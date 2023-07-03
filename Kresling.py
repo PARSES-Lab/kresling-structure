@@ -387,23 +387,31 @@ def create_hinge_extrude(original_sketch, offset_from_original, hinge_loft_thick
     return hinge_loft
 
 def circular_pattern(input_bodies, pattern_num): 
-        #Pattern around the y-axis
-        z_axis = rootComp.zConstructionAxis
-        
-        #Define input
-        circle_pattern_input = circlePatternFeats.createInput(input_bodies, z_axis)
-        
-        # Create patternNum of copies
-        circle_pattern_input.quantity = adsk.core.ValueInput.createByReal(pattern_num)
-        
-        # Pattern symmetrically across 360 degrees
-        circle_pattern_input.totalAngle = adsk.core.ValueInput.createByString('360 deg')
-        circle_pattern_input.isSymmetric = True
-        
-        # Create the circular pattern
-        circle_pat_feat = circlePatternFeats.add(circle_pattern_input)
+    #Pattern around the y-axis
+    z_axis = rootComp.zConstructionAxis
+    
+    #Define input
+    circle_pattern_input = circlePatternFeats.createInput(input_bodies, z_axis)
+    
+    # Create patternNum of copies
+    circle_pattern_input.quantity = adsk.core.ValueInput.createByReal(pattern_num)
+    
+    # Pattern symmetrically across 360 degrees
+    circle_pattern_input.totalAngle = adsk.core.ValueInput.createByString('360 deg')
+    circle_pattern_input.isSymmetric = True
+    
+    # Create the circular pattern
+    circle_pat_feat = circlePatternFeats.add(circle_pattern_input)
 
-        return circle_pat_feat
+    return circle_pat_feat
+
+def rotate_around_z(input_bodies, input_angle):
+    #input_bodies is an Object Collection of bodies
+    move_input = moveFeats.createInput2(input_bodies)
+    #Rotate around z-axis by top rotation angle
+    real_angle = adsk.core.ValueInput.createByReal(input_angle)
+    move_input.defineAsRotate(rootComp.zConstructionAxis, real_angle)
+    return moveFeats.add(move_input)
 
 def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_polygon_edges, height, top_rotation_angle, base_thickness, lip_thickness, collar_height):
     #Create each Kresling triangle according to specified dimensions
@@ -483,7 +491,12 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
                 #Mirror collar body
                 collar_mirror_bodies = adsk.core.ObjectCollection.create()
                 collar_mirror_bodies.add(collar_body)
+                #Rotate mirrored collar body by top rotation angle
                 mirrored_collar_body = mirror_bodies(collar_mirror_plane, collar_mirror_bodies).bodies.item(0)
+                rotate_collar_bodies = adsk.core.ObjectCollection.create()
+                rotate_collar_bodies.add(mirrored_collar_body)
+                rotated_collar = rotate_around_z(rotate_collar_bodies, top_rotation_angle)
+                #Circular pattern the collar body
                 circular_pattern_bodies.add(mirrored_collar_body)
             
             #Generate lid above the collar
@@ -506,6 +519,11 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
                 lip_mirror_bodies = adsk.core.ObjectCollection.create()
                 lip_mirror_bodies.add(target_lip)
                 mirrored_lip_body = mirror_bodies(collar_mirror_plane, lip_mirror_bodies).bodies.item(0)
+                #Rotate mirrored lip by top rotation angle
+                rotate_lip_bodies = adsk.core.ObjectCollection.create()
+                rotate_lip_bodies.add(mirrored_lip_body)
+                rotated_lip = rotate_around_z(rotate_lip_bodies, top_rotation_angle)
+                #Circular pattern the lip body
                 circular_pattern_bodies.add(mirrored_lip_body)
 
             #Make lid
@@ -526,6 +544,10 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
                     lid_mirror_bodies = adsk.core.ObjectCollection.create()
                     lid_mirror_bodies.add(combined_lid_body)
                     mirrored_lid_body = mirror_bodies(collar_mirror_plane, lid_mirror_bodies).bodies.item(0)
+                    #Rotate mirrored lid by top rotation angle
+                    rotate_lid_bodies = adsk.core.ObjectCollection.create()
+                    rotate_lid_bodies.add(mirrored_lid_body)
+                    rotated_lid = rotate_around_z(rotate_lid_bodies, top_rotation_angle)
 
                 #Cut tubing
                 if tube_OD > 0:
@@ -571,6 +593,7 @@ combineFeats = rootComp.features.combineFeatures
 circlePatternFeats = rootComp.features.circularPatternFeatures
 extrudeFeats = rootComp.features.extrudeFeatures
 mirrorFeats = rootComp.features.mirrorFeatures
+moveFeats = rootComp.features.moveFeatures
 
 # Make Kresling structure
 Kresling = make_Kresling_body(loftFeats, radius, wall_thickness, hinge_thickness, number_polygon_edges, height, top_rotation_angle, base_thickness, lip_thickness, collar_height)
