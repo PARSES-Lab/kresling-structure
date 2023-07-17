@@ -42,9 +42,9 @@ gen_symmetric_collars = True
 
 #Generate lid if true, otherwise generate Kresling without the lid
 keepLid = True
-tube_OD = 0.5
+tube_OD = 0 #0.28
 
-ratio_hinge_to_wall = 0.75
+ratio_hinge_to_wall = 1
 ratio_base_to_wall = 1
 ratio_lip_to_wall = 1
 
@@ -165,8 +165,8 @@ def make_collar(x_points, y_points, radius, height, thickness, collar_height, co
     #GENERATE HOLES IF NEEDED
     if gen_collar_holes:
         #Find the point in the middle of the collar
-        x_coord_hole = sum(x_coord)/len(x_coord) * 0 #strange behavior when this is not zero
-        y_coord_hole = sum(y_coord)/len(y_coord) 
+        x_coord_hole = sum(x_coord)/len(x_coord)
+        y_coord_hole = sum(y_coord)/len(y_coord)
         z_coord_hole = (middle_height + top_height)/2
         hole_radius = (top_height - middle_height)/2
 
@@ -182,7 +182,8 @@ def make_collar(x_points, y_points, radius, height, thickness, collar_height, co
 
         #Extrude circle
         cut_input = extrudeFeats.createInput(hole_sketch.profiles.item(0), adsk.fusion.FeatureOperations.CutFeatureOperation)
-        cut_input.setOneSideExtent(adsk.fusion.ThroughAllExtentDefinition.create(), adsk.fusion.ExtentDirections.NegativeExtentDirection)
+        cut_distance = adsk.core.ValueInput.createByReal(radius*2)
+        cut_input.setSymmetricExtent(cut_distance, True)
         cut_input.participantBodies = body_list
         ext = extrudeFeats.add(cut_input)
 
@@ -244,20 +245,19 @@ def make_chambers(lofts, outer_radius, inner_radius, chamber_thickness, draw_pts
     return chamber_bodies
 
 def make_chamber_walls(lofts, outer_radius, inner_radius, chamber_thickness, draw_x, draw_y, draw_z, body_list):
-    
     if draw_z[1] > draw_z[0]: #if the bottom triangle is being drawn
         second_radius = inner_radius
     else:
         second_radius = outer_radius
 
-    points_x = make_chamber_points(outer_radius, second_radius, inner_radius, draw_x)
-    points_y = make_chamber_points(outer_radius, second_radius, inner_radius, draw_y)
+    points_x = make_chamber_points(outer_radius, second_radius, inner_radius - wall_thickness, draw_x)
+    points_y = make_chamber_points(outer_radius, second_radius, inner_radius - wall_thickness, draw_y)
 
     chamber_triangle = param_Kresling(1, points_x, points_y, draw_z)
     chamber_parent = chamber_triangle.parentSketch
 
-    front_chamber = create_hinge_extrude(chamber_parent, 0, chamber_thickness/2, 0)
-    back_chamber = create_hinge_extrude(chamber_parent, 0, chamber_thickness/2, 1)
+    front_chamber = create_hinge_extrude(chamber_parent, 0, chamber_thickness, 0)
+    back_chamber = create_hinge_extrude(chamber_parent, 0, chamber_thickness, 1)
     body_list.append(front_chamber)
     body_list.append(back_chamber)
 
@@ -377,7 +377,7 @@ def create_hinge_extrude(original_sketch, offset_from_original, hinge_loft_thick
     #Project the original sketch onto the construction plane in a new sketch
     hinge_sketch = project_sketch(original_sketch, hinge_plane)
     #Offset the projection on the new sketch by however much the hinge triangle is smaller than the original
-    if offset_from_original > 0:
+    if offset_from_original != 0:
         offset_sketch_inside(hinge_sketch, offset_from_original)
 
     #Loft the original triangle to the hinge triangle
