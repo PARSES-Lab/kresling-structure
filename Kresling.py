@@ -167,7 +167,7 @@ def make_collar(x_points, y_points, radius, height, thickness, collar_height, co
         #Find the point in the middle of the collar
         x_coord_hole = sum(x_coord)/len(x_coord)
         y_coord_hole = sum(y_coord)/len(y_coord)
-        z_coord_hole = (middle_height + top_height)/2
+        z_coord_hole = (height + top_height)/2
         hole_radius = (top_height - middle_height)/2
 
         #Find circle plane
