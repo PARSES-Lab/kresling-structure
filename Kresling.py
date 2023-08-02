@@ -30,7 +30,7 @@ height_compressed = 1
 chamber_length = 0 #1.5
 
 #The distance between the original Kresling triangle and the hinge Kresling triangle
-hinge_offset = 0.075
+hinge_offset = 0.2
 #this needs to be recalculated
 
 #Collar dimensions
@@ -38,13 +38,13 @@ collar_height = 0.55
 collar_ratio = 0.25/0.55
 collar_offset = wall_thickness * 2
 gen_collar_holes = True
-gen_symmetric_collars = True
+gen_symmetric_collars = False
 
 #Generate lid if true, otherwise generate Kresling without the lid
 keepLid = True
 tube_OD = 0 #0.28
 
-ratio_hinge_to_wall = 1
+ratio_hinge_to_wall = 0
 ratio_base_to_wall = 1
 ratio_lip_to_wall = 1
 
@@ -435,13 +435,15 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
 
         outer_kresling = param_Kresling(radius - hinge_thickness, draw_points_x, draw_points_y, draw_points_z)
         inner_kresling = param_Kresling(radius - wall_thickness, draw_points_x, draw_points_y, draw_points_z)
-        hinge_kresling_sketch = outer_kresling.parentSketch
-        hinge_loft = create_hinge_extrude(hinge_kresling_sketch, hinge_offset, hinge_thickness, lower_count)
 
-        #Add hinge bodies to list
-        hinge_bodies = hinge_loft.bodies.item(0)
-        body_list.append(hinge_bodies)
-        circular_pattern_bodies.add(hinge_bodies)
+        if hinge_thickness > 0:
+            hinge_kresling_sketch = outer_kresling.parentSketch
+            hinge_loft = create_hinge_extrude(hinge_kresling_sketch, hinge_offset, hinge_thickness, lower_count)
+
+            #Add hinge bodies to list
+            hinge_bodies = hinge_loft.bodies.item(0)
+            body_list.append(hinge_bodies)
+            circular_pattern_bodies.add(hinge_bodies)
         
         if hinge_thickness < wall_thickness:
             #Loft between interior and exterior Kresling faces, create bodies from loft features
