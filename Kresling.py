@@ -27,7 +27,7 @@ number_polygon_edges = 6
 wall_thickness = 0.1
 lamb = 0.75
 height_compressed = 1
-chamber_length = 1.5
+chamber_length = 0 #1.5
 
 #The distance between the original Kresling triangle and the hinge Kresling triangle
 hinge_offset = 0.075
@@ -293,9 +293,10 @@ def cut_combine(target_body, tool_body, keep_body):
 
 def combine_bodies(target_body, tool_body_list):
     #target_body is a single body, tool_body_list is an Object Collection
-    combine_input: adsk.fusion.CombineFeatureInput = combineFeats.createInput(target_body, tool_body_list)
+    combine_input = combineFeats.createInput(target_body, tool_body_list)
     combine_input.operation = adsk.fusion.FeatureOperations.JoinFeatureOperation
-    return combineFeats.add(combine_input)
+    combined_bodies_feat = combineFeats.add(combine_input)
+    return combined_bodies_feat
 
 def mirror_bodies(mirror_plane, mirror_bodies):
     #tool_body_list is an Object Collection
@@ -477,7 +478,7 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
         if collar_height <= 0:
             #Generate lid at the Kresling height if there is no collar
             lid_height = height
-        else:
+        elif lower_count == 0:
             #Make collar if collar height > 0
             collar_points_x = tri_points_x[1::2]
             collar_points_y = tri_points_y[1::2]
@@ -534,7 +535,7 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
                 #Circular pattern lid and combine the pieces
                 patterned_lid = circular_pattern(circular_pattern_lid, number_polygon_edges)
                 patterned_lid_bodies = adsk.core.ObjectCollection.create()
-                for item_count in range(patterned_lid.bodies.count):
+                for item_count in range(patterned_lid.bodies.count - 1): #ignore the original patterned body
                     patterned_lid_bodies.add(patterned_lid.bodies.item(item_count))
                 combined_lid = combine_bodies(tool_lip, patterned_lid_bodies)
                 combined_lid_body = combined_lid.bodies.item(0)
