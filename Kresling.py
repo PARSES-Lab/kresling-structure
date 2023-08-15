@@ -15,7 +15,7 @@ phi -> half_inner_angle
 '''
 
 # adsk are libraries for Python Fusion API
-import adsk.core, adsk.fusion, adsk.cam
+import adsk.core, adsk.fusion, adsk.cam, traceback
 import math
 
 ########### BEGIN USER MODIFIED PARAMETERS ############
@@ -41,7 +41,7 @@ gen_collar_holes = True
 gen_symmetric_collars = False
 
 #Generate lid if true, otherwise generate Kresling without the lid
-keepLid = True
+keep_lid = True
 tube_OD = 0 #0.28
 
 ratio_hinge_to_wall = 0
@@ -415,166 +415,172 @@ def rotate_around_z(input_bodies, input_angle):
     return moveFeats.add(move_input)
 
 def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_polygon_edges, height, top_rotation_angle, base_thickness, lip_thickness, collar_height):
-    #Create each Kresling triangle according to specified dimensions
+    try:
+        #Create each Kresling triangle according to specified dimensions
 
-    body_list = [] #Make an empty body list to append new bodies to
+        body_list = [] #Make an empty body list to append new bodies to
 
-    #Create point lists for Kresling triangle points
-    tri_points_x = generate_polygon_points(number_polygon_edges, top_rotation_angle, 0)
-    tri_points_y = generate_polygon_points(number_polygon_edges, top_rotation_angle, math.pi/2)
-    tri_points_z = [0, height, 0, height]
+        #Create point lists for Kresling triangle points
+        tri_points_x = generate_polygon_points(number_polygon_edges, top_rotation_angle, 0)
+        tri_points_y = generate_polygon_points(number_polygon_edges, top_rotation_angle, math.pi/2)
+        tri_points_z = [0, height, 0, height]
 
-    #Draw upper and lower Kresling triangles from point lists
-    circular_pattern_bodies = adsk.core.ObjectCollection.create() #create collection to pattern
-    
-    for lower_count in range(2):    
-        #draw Kresling polygons for bottom of module, then top of module
-        draw_points_x = tri_points_x[lower_count : lower_count + 3]
-        draw_points_y = tri_points_y[lower_count : lower_count + 3]
-        draw_points_z = tri_points_z[lower_count : lower_count + 3]
-
-        outer_kresling = param_Kresling(radius - hinge_thickness, draw_points_x, draw_points_y, draw_points_z)
-        inner_kresling = param_Kresling(radius - wall_thickness, draw_points_x, draw_points_y, draw_points_z)
-
-        if hinge_thickness > 0:
-            hinge_kresling_sketch = outer_kresling.parentSketch
-            hinge_loft = create_hinge_extrude(hinge_kresling_sketch, hinge_offset, hinge_thickness, lower_count)
-
-            #Add hinge bodies to list
-            hinge_bodies = hinge_loft.bodies.item(0)
-            body_list.append(hinge_bodies)
-            circular_pattern_bodies.add(hinge_bodies)
+        #Draw upper and lower Kresling triangles from point lists
+        circular_pattern_bodies = adsk.core.ObjectCollection.create() #create collection to pattern
         
-        if hinge_thickness < wall_thickness:
-            #Loft between interior and exterior Kresling faces, create bodies from loft features
-            outer_loft = add_loft(lofts,[outer_kresling, inner_kresling]) 
-            outer_bodies = outer_loft.bodies.item(0)
-            body_list.append(outer_bodies)
-            circular_pattern_bodies.add(outer_bodies)
-        
-        if chamber_length > 0:
-            outer_center_kresling = param_Kresling((radius - chamber_length), draw_points_x, draw_points_y, draw_points_z)
-            inner_center_kresling = param_Kresling((radius - chamber_length) - hinge_thickness, draw_points_x, draw_points_y, draw_points_z)
+        for lower_count in range(2):    
+            #draw Kresling polygons for bottom of module, then top of module
+            draw_points_x = tri_points_x[lower_count : lower_count + 3]
+            draw_points_y = tri_points_y[lower_count : lower_count + 3]
+            draw_points_z = tri_points_z[lower_count : lower_count + 3]
 
-            #Generate center Kresling walls
-            center_loft = add_loft(lofts,[inner_center_kresling, outer_center_kresling])
-            center_bodies = center_loft.bodies.item(0)
-            body_list.append(center_bodies)
-            circular_pattern_bodies.add(center_bodies)
-        
-        #### Base, lip, and collar body generation
+            outer_kresling = param_Kresling(radius - hinge_thickness, draw_points_x, draw_points_y, draw_points_z)
+            inner_kresling = param_Kresling(radius - wall_thickness, draw_points_x, draw_points_y, draw_points_z)
 
-        base_points_x = tri_points_x[0::2]
-        base_points_y = tri_points_y[0::2]
-        base_points_x.append(0)
-        base_points_y.append(0)
-        
-        if lower_count == 0 and base_thickness > 0 and gen_symmetric_collars == False:
+            if hinge_thickness > 0:
+                hinge_kresling_sketch = outer_kresling.parentSketch
+                hinge_loft = create_hinge_extrude(hinge_kresling_sketch, hinge_offset, hinge_thickness, lower_count)
+
+                #Add hinge bodies to list
+                hinge_bodies = hinge_loft.bodies.item(0)
+                body_list.append(hinge_bodies)
+                circular_pattern_bodies.add(hinge_bodies)
+            
+            if hinge_thickness < wall_thickness:
+                #Loft between interior and exterior Kresling faces, create bodies from loft features
+                outer_loft = add_loft(lofts,[outer_kresling, inner_kresling]) 
+                outer_bodies = outer_loft.bodies.item(0)
+                body_list.append(outer_bodies)
+                circular_pattern_bodies.add(outer_bodies)
+            
+            if chamber_length > 0:
+                outer_center_kresling = param_Kresling((radius - chamber_length), draw_points_x, draw_points_y, draw_points_z)
+                inner_center_kresling = param_Kresling((radius - chamber_length) - hinge_thickness, draw_points_x, draw_points_y, draw_points_z)
+
+                #Generate center Kresling walls
+                center_loft = add_loft(lofts,[inner_center_kresling, outer_center_kresling])
+                center_bodies = center_loft.bodies.item(0)
+                body_list.append(center_bodies)
+                circular_pattern_bodies.add(center_bodies)
+            
+            #### Base, lip, and collar body generation
+
             base_points_x = tri_points_x[0::2]
             base_points_y = tri_points_y[0::2]
             base_points_x.append(0)
             base_points_y.append(0)
-            base_body = make_base(base_points_x, base_points_y, radius, 0, -1 * wall_thickness, lofts, body_list)
-            circular_pattern_bodies.add(base_body)
-        
-        if collar_height <= 0:
-            #Generate lid at the Kresling height if there is no collar
-            lid_height = height
-        elif lower_count == 0:
-            #Make collar if collar height > 0
-            collar_points_x = tri_points_x[1::2]
-            collar_points_y = tri_points_y[1::2]
-            collar_body = make_collar(collar_points_x, collar_points_y, radius, height, wall_thickness, collar_height, collar_ratio, collar_offset, gen_collar_holes, lofts, body_list)
-            circular_pattern_bodies.add(collar_body)
-
-            #Make mirrored collar
-            if lower_count == 0 and gen_symmetric_collars:
-                #Mirror plane
-                collar_mirror_plane = construct_offset_plane(rootComp.xYConstructionPlane, height/2)
-                #Mirror collar body
-                collar_mirror_bodies = adsk.core.ObjectCollection.create()
-                collar_mirror_bodies.add(collar_body)
-                #Rotate mirrored collar body by top rotation angle
-                mirrored_collar_body = mirror_bodies(collar_mirror_plane, collar_mirror_bodies).bodies.item(0)
-                rotate_collar_bodies = adsk.core.ObjectCollection.create()
-                rotate_collar_bodies.add(mirrored_collar_body)
-                rotated_collar = rotate_around_z(rotate_collar_bodies, top_rotation_angle)
-                #Circular pattern the collar body
-                circular_pattern_bodies.add(mirrored_collar_body)
             
-            #Generate lid above the collar
-            lid_height = height + collar_height
+            if lower_count == 0 and base_thickness > 0 and gen_symmetric_collars == False:
+                base_points_x = tri_points_x[0::2]
+                base_points_y = tri_points_y[0::2]
+                base_points_x.append(0)
+                base_points_y.append(0)
+                base_body = make_base(base_points_x, base_points_y, radius, 0, -1 * wall_thickness, lofts, body_list)
+                circular_pattern_bodies.add(base_body)
+            
+            if collar_height <= 0:
+                #Generate lid at the Kresling height if there is no collar
+                lid_height = height
+            elif lower_count == 0:
+                #Make collar if collar height > 0
+                collar_points_x = tri_points_x[1::2]
+                collar_points_y = tri_points_y[1::2]
+                collar_body = make_collar(collar_points_x, collar_points_y, radius, height, wall_thickness, collar_height, collar_ratio, collar_offset, gen_collar_holes, lofts, body_list)
+                circular_pattern_bodies.add(collar_body)
 
-        if lower_count == 1 and lip_thickness > 0:
-            base_points_x = tri_points_x[1::2]
-            base_points_y = tri_points_y[1::2]
-            base_points_x.append(0)
-            base_points_y.append(0)
-            target_lip = make_base(base_points_x, base_points_y, radius, lid_height, wall_thickness, lofts, body_list)
-            tool_lip = make_base(base_points_x, base_points_y, radius - wall_thickness, lid_height, wall_thickness, lofts, body_list)
+                #Make mirrored collar
+                if lower_count == 0 and gen_symmetric_collars:
+                    #Mirror plane
+                    collar_mirror_plane = construct_offset_plane(rootComp.xYConstructionPlane, height/2)
+                    #Mirror collar body
+                    collar_mirror_bodies = adsk.core.ObjectCollection.create()
+                    collar_mirror_bodies.add(collar_body)
+                    #Rotate mirrored collar body by top rotation angle
+                    mirrored_collar_body = mirror_bodies(collar_mirror_plane, collar_mirror_bodies).bodies.item(0)
+                    rotate_collar_bodies = adsk.core.ObjectCollection.create()
+                    rotate_collar_bodies.add(mirrored_collar_body)
+                    rotated_collar = rotate_around_z(rotate_collar_bodies, top_rotation_angle)
+                    #Circular pattern the collar body
+                    circular_pattern_bodies.add(mirrored_collar_body)
+                
+                #Generate lid above the collar
+                lid_height = height + collar_height
 
-            #Cut top out of the Kresling to make a lip
-            cut_combine(target_lip, tool_lip, keepLid)
-            circular_pattern_bodies.add(target_lip)
+            if lower_count == 1 and lip_thickness > 0:
+                base_points_x = tri_points_x[1::2]
+                base_points_y = tri_points_y[1::2]
+                base_points_x.append(0)
+                base_points_y.append(0)
+                target_lip = make_base(base_points_x, base_points_y, radius, lid_height, wall_thickness, lofts, body_list)
+                tool_lip = make_base(base_points_x, base_points_y, radius - wall_thickness, lid_height, wall_thickness, lofts, body_list)
 
-            #Make mirrored lip for mirrored collar
-            if gen_symmetric_collars:
-                lip_mirror_bodies = adsk.core.ObjectCollection.create()
-                lip_mirror_bodies.add(target_lip)
-                mirrored_lip_body = mirror_bodies(collar_mirror_plane, lip_mirror_bodies).bodies.item(0)
-                #Rotate mirrored lip by top rotation angle
-                rotate_lip_bodies = adsk.core.ObjectCollection.create()
-                rotate_lip_bodies.add(mirrored_lip_body)
-                rotated_lip = rotate_around_z(rotate_lip_bodies, top_rotation_angle)
-                #Circular pattern the lip body
-                circular_pattern_bodies.add(mirrored_lip_body)
+                #Cut top out of the Kresling to make a lip
+                cut_combine(target_lip, tool_lip, keep_lid)
+                circular_pattern_bodies.add(target_lip)
 
-            #Make lid
-            if keepLid:
-                circular_pattern_lid = adsk.core.ObjectCollection.create() #create collection to pattern lid
-                circular_pattern_lid.add(tool_lip)
-
-                #Circular pattern lid and combine the pieces
-                patterned_lid = circular_pattern(circular_pattern_lid, number_polygon_edges)
-                patterned_lid_bodies = adsk.core.ObjectCollection.create()
-                for item_count in range(patterned_lid.bodies.count - 1): #ignore the original patterned body
-                    patterned_lid_bodies.add(patterned_lid.bodies.item(item_count))
-                combined_lid = combine_bodies(tool_lip, patterned_lid_bodies)
-                combined_lid_body = combined_lid.bodies.item(0)
-
-                #Make mirrored lid for mirrored collar
+                #Make mirrored lip for mirrored collar
                 if gen_symmetric_collars:
-                    lid_mirror_bodies = adsk.core.ObjectCollection.create()
-                    lid_mirror_bodies.add(combined_lid_body)
-                    mirrored_lid_body = mirror_bodies(collar_mirror_plane, lid_mirror_bodies).bodies.item(0)
-                    #Rotate mirrored lid by top rotation angle
-                    rotate_lid_bodies = adsk.core.ObjectCollection.create()
-                    rotate_lid_bodies.add(mirrored_lid_body)
-                    rotated_lid = rotate_around_z(rotate_lid_bodies, top_rotation_angle)
+                    lip_mirror_bodies = adsk.core.ObjectCollection.create()
+                    lip_mirror_bodies.add(target_lip)
+                    mirrored_lip_body = mirror_bodies(collar_mirror_plane, lip_mirror_bodies).bodies.item(0)
+                    #Rotate mirrored lip by top rotation angle
+                    rotate_lip_bodies = adsk.core.ObjectCollection.create()
+                    rotate_lip_bodies.add(mirrored_lip_body)
+                    rotated_lip = rotate_around_z(rotate_lip_bodies, top_rotation_angle)
+                    #Circular pattern the lip body
+                    circular_pattern_bodies.add(mirrored_lip_body)
 
-                #Cut tubing
-                if tube_OD > 0:
-                    tubing_bodies = createTubing(lid_height, number_polygon_edges, top_rotation_angle, wall_thickness, tube_OD)
-                    #Combine all lid bodies into one
-                    combined_tube_lid = combine_bodies(combined_lid.bodies.item(0), tubing_bodies)
-                    body_list.append(combined_tube_lid.bodies.item(0))
-                else:
-                    body_list.append(combined_lid.bodies.item(0))
+                #Make lid
+                if keep_lid:
+                    circular_pattern_lid = adsk.core.ObjectCollection.create() #create collection to pattern lid
+                    circular_pattern_lid.add(tool_lip)
+
+                    #Circular pattern lid and combine the pieces
+                    patterned_lid = circular_pattern(circular_pattern_lid, number_polygon_edges)
+                    patterned_lid_bodies = adsk.core.ObjectCollection.create()
+                    for item_count in range(patterned_lid.bodies.count - 1): #ignore the original patterned body
+                        patterned_lid_bodies.add(patterned_lid.bodies.item(item_count))
+                    combined_lid = combine_bodies(tool_lip, patterned_lid_bodies)
+                    combined_lid_body = combined_lid.bodies.item(0)
+
+                    #Make mirrored lid for mirrored collar
+                    if gen_symmetric_collars:
+                        lid_mirror_bodies = adsk.core.ObjectCollection.create()
+                        lid_mirror_bodies.add(combined_lid_body)
+                        mirrored_lid_body = mirror_bodies(collar_mirror_plane, lid_mirror_bodies).bodies.item(0)
+                        #Rotate mirrored lid by top rotation angle
+                        rotate_lid_bodies = adsk.core.ObjectCollection.create()
+                        rotate_lid_bodies.add(mirrored_lid_body)
+                        rotated_lid = rotate_around_z(rotate_lid_bodies, top_rotation_angle)
+
+                    #Cut tubing
+                    if tube_OD > 0:
+                        tubing_bodies = createTubing(lid_height, number_polygon_edges, top_rotation_angle, wall_thickness, tube_OD)
+                        #Combine all lid bodies into one
+                        combined_tube_lid = combine_bodies(combined_lid.bodies.item(0), tubing_bodies)
+                        body_list.append(combined_tube_lid.bodies.item(0))
+                    else:
+                        body_list.append(combined_lid.bodies.item(0))
+            
+        #Circular pattern all bodies by the number of Kresling polygon edges
+        patterned_kresling = circular_pattern(circular_pattern_bodies, number_polygon_edges)
+        body_list.append(patterned_kresling)
         
-    #Circular pattern all bodies by the number of Kresling polygon edges
-    patterned_kresling = circular_pattern(circular_pattern_bodies, number_polygon_edges)
-    body_list.append(patterned_kresling)
-    
-    circular_chamber_bodies = adsk.core.ObjectCollection.create() #create collection to pattern
-    chamber_bodies = make_chambers(lofts, radius - wall_thickness, radius - chamber_length, wall_thickness, tri_points_x, tri_points_y, tri_points_z)
-    
-    for chamberBody in chamber_bodies:
-        circular_chamber_bodies.add(chamberBody.bodies.item(0))
-    circular_chambers = circular_pattern(circular_chamber_bodies, 3)
+        if chamber_length > 0:
+            circular_chamber_bodies = adsk.core.ObjectCollection.create() #create collection to pattern
 
-    body_list.append(circular_chambers)
+            chamber_bodies = make_chambers(lofts, radius - wall_thickness, radius - chamber_length, wall_thickness, tri_points_x, tri_points_y, tri_points_z)
+            
+            for chamberBody in chamber_bodies:
+                circular_chamber_bodies.add(chamberBody.bodies.item(0))
+            circular_chambers = circular_pattern(circular_chamber_bodies, 3)
+
+            body_list.append(circular_chambers)
+        
+        return body_list
     
-    return body_list
+    except:
+        ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
 
 ##### Main code #####
 
