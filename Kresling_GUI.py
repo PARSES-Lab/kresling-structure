@@ -93,7 +93,7 @@ class on_execute_handler(adsk.core.CommandEventHandler):
             ratio_lip_to_wall = inputs.itemById('ratio_lip_to_wall').value
             collar_height = inputs.itemById('collar_height').value
             collar_ratio = inputs.itemById('collar_ratio').value
-            collar_thickness = inputs.itemById('collar_offset').value
+            collar_thickness = inputs.itemById('collar_thickness').value
             gen_collar_holes = inputs.itemById('gen_collar_holes').value
             gen_symmetric_collars = inputs.itemById('gen_symmetric_collars').value
             keep_lid = inputs.itemById('keep_lid').value
@@ -245,7 +245,7 @@ class cmd_creation_handler(adsk.core.CommandCreatedEventHandler):
             positive_inputs.append(tab_child_inputs1.addValueInput('edge_length', 'Edge Length', 'cm', adsk.core.ValueInput.createByReal(edge_length)))
             tab_child_inputs1.addIntegerSliderCommandInput('number_polygon_edges', 'Polygon Edge Count', number_polygon_edges, 10)
             positive_inputs.append(tab_child_inputs1.addValueInput('wall_thickness', 'Wall Thickness', 'cm', adsk.core.ValueInput.createByReal(wall_thickness)))
-            pos_zero_inputs.append(tab_child_inputs1.addValueInput('lamb', 'Lambda', '', adsk.core.ValueInput.createByReal(lamb)))
+            positive_inputs.append(tab_child_inputs1.addValueInput('lamb', 'Lambda', '', adsk.core.ValueInput.createByReal(lamb)))
             pos_zero_inputs.append(tab_child_inputs1.addValueInput('chamber_length', 'Length of Inner Chambers', 'cm', adsk.core.ValueInput.createByReal(chamber_length)))
             pos_zero_inputs.append(tab_child_inputs1.addValueInput('hinge_offset', 'Hinge Offset', 'cm', adsk.core.ValueInput.createByReal(hinge_offset)))
             ratio_inputs.append(tab_child_inputs1.addValueInput('ratio_hinge_to_wall', 'Hinge to Wall Ratio', '', adsk.core.ValueInput.createByReal(ratio_hinge_to_wall)))
@@ -800,7 +800,20 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
             
         #Circular pattern all bodies by the number of Kresling polygon edges
         patterned_kresling = circular_pattern(circular_pattern_bodies, number_polygon_edges)
-        body_list.append(patterned_kresling)
+
+        #Combine Kresling
+        combined_kresling_bodies = adsk.core.ObjectCollection.create()
+        for item_count in range(patterned_kresling.bodies.count - 1): #ignore the first body
+            combined_kresling_bodies.add(patterned_kresling.bodies.item(item_count+1))
+        tool_kresling_body = patterned_kresling.bodies.item(0)
+        combined_kresling = combine_bodies(tool_kresling_body, combined_kresling_bodies)
+        combined_kresling_body = combined_kresling.bodies.item(0)
+
+        #Rename Kresling body according to key variables
+        kresling_name = str(edge_length) + '-EL_' + str(number_polygon_edges) + '-PE_' + str(wall_thickness) + '-WT_' + str(lamb) + '-LA_' + str(height_compressed) + '-HC_' + str(chamber_length) + '-CL_' + str(collar_height) + '-CH_' + str(gen_symmetric_collars) + '-SC'
+        combined_kresling_body.name = kresling_name
+
+        body_list.append(combined_kresling_body)
         
         if chamber_length > 0:
             circular_chamber_bodies = adsk.core.ObjectCollection.create() #create collection to pattern
