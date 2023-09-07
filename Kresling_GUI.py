@@ -118,6 +118,7 @@ class on_execute_handler(adsk.core.CommandEventHandler):
             ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
 
 #User input change event handler
+#CURRENTLY UNUSED
 class cmd_input_changed_handler(adsk.core.InputChangedEventHandler):
     def __init__(self):
         super().__init__()
@@ -243,7 +244,8 @@ class cmd_creation_handler(adsk.core.CommandCreatedEventHandler):
 
             #create inputs for Kresling dimensions
             positive_inputs.append(tab_child_inputs1.addValueInput('edge_length', 'Edge Length', 'cm', adsk.core.ValueInput.createByReal(edge_length)))
-            tab_child_inputs1.addIntegerSliderCommandInput('number_polygon_edges', 'Polygon Edge Count', number_polygon_edges, 10)
+            tab_child_inputs1.addIntegerSliderCommandInput('number_polygon_edges', 'Polygon Edge Count', 3, 18)
+            tab_child_inputs1.itemById('number_polygon_edges').expressionOne = str(number_polygon_edges)
             positive_inputs.append(tab_child_inputs1.addValueInput('wall_thickness', 'Wall Thickness', 'cm', adsk.core.ValueInput.createByReal(wall_thickness)))
             positive_inputs.append(tab_child_inputs1.addValueInput('lamb', 'Lambda', '', adsk.core.ValueInput.createByReal(lamb)))
             pos_zero_inputs.append(tab_child_inputs1.addValueInput('chamber_length', 'Length of Inner Chambers', 'cm', adsk.core.ValueInput.createByReal(chamber_length)))
