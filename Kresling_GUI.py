@@ -663,6 +663,7 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
 
         #Draw upper and lower Kresling triangles from point lists
         circular_pattern_bodies = adsk.core.ObjectCollection.create() #create collection to pattern
+        combined_kresling_bodies = adsk.core.ObjectCollection.create() #create collection to combine Kresling parts
         
         for lower_count in range(2):    
             #draw Kresling polygons for bottom of module, then top of module
@@ -788,6 +789,10 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
                         rotate_lid_bodies = adsk.core.ObjectCollection.create()
                         rotate_lid_bodies.add(mirrored_lid_body)
                         rotated_lid = rotate_around_z(rotate_lid_bodies, top_rotation_angle)
+                        rotated_lid_body = rotated_lid.bodies.item(0)
+
+                        #Add lid to combine list
+                        combined_kresling_bodies.add(rotated_lid_body)
 
                     #Cut tubing
                     if tube_OD > 0:
@@ -802,7 +807,6 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
         patterned_kresling = circular_pattern(circular_pattern_bodies, number_polygon_edges)
 
         #Combine Kresling
-        combined_kresling_bodies = adsk.core.ObjectCollection.create()
         for item_count in range(patterned_kresling.bodies.count - 1): #ignore the first body
             combined_kresling_bodies.add(patterned_kresling.bodies.item(item_count+1))
         tool_kresling_body = patterned_kresling.bodies.item(0)
@@ -810,7 +814,7 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
         combined_kresling_body = combined_kresling.bodies.item(0)
 
         #Rename Kresling body according to key variables
-        kresling_name = str(edge_length) + '-EL_' + str(number_polygon_edges) + '-PE_' + str(wall_thickness) + '-WT_' + str(lamb) + '-LA_' + str(height_compressed) + '-HC_' + str(chamber_length) + '-CL_' + str(collar_height) + '-CH_' + str(gen_symmetric_collars) + '-SC'
+        kresling_name = '|' + str(edge_length) + '-EL_' + str(number_polygon_edges) + '-PE_' + str(wall_thickness) + '-WT_' + str(lamb) + '-LA_' + str(height_compressed) + '-HC|' + str(chamber_length) + '-CL|' + str(collar_height) + '-CH_' + str(gen_symmetric_collars) + '-SC|'
         combined_kresling_body.name = kresling_name
 
         body_list.append(combined_kresling_body)
