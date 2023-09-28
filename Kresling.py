@@ -42,7 +42,7 @@ gen_symmetric_collars = False
 
 #Generate lid if true, otherwise generate Kresling without the lid
 keep_lid = True
-tube_OD = 0 #0.28
+tube_OD = 0.28
 
 ratio_hinge_to_wall = 0
 ratio_base_to_wall = 1
@@ -65,6 +65,7 @@ class cmd_destroy_handler(adsk.core.CommandEventHandler):
             ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
 
 #Command execution (hitting 'OK') event handler
+#This is NOT USED due to the usage of the command execution preview event handler
 class on_execute_handler(adsk.core.CommandEventHandler):
     def __init__(self):
         super().__init__()
@@ -92,7 +93,7 @@ class on_execute_handler(adsk.core.CommandEventHandler):
             ratio_lip_to_wall = inputs.itemById('ratio_lip_to_wall').value
             collar_height = inputs.itemById('collar_height').value
             collar_ratio = inputs.itemById('collar_ratio').value
-            collar_thickness = inputs.itemById('collar_offset').value
+            collar_thickness = inputs.itemById('collar_thickness').value
             gen_collar_holes = inputs.itemById('gen_collar_holes').value
             gen_symmetric_collars = inputs.itemById('gen_symmetric_collars').value
             keep_lid = inputs.itemById('keep_lid').value
@@ -117,12 +118,12 @@ class on_execute_handler(adsk.core.CommandEventHandler):
             ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
 
 #User input change event handler
+#CURRENTLY UNUSED
 class cmd_input_changed_handler(adsk.core.InputChangedEventHandler):
     def __init__(self):
         super().__init__()
     def notify(self, args):
         try:
-
             #Watch inputs
             adsk.core.InputChangedEventArgs.cast(args)
             event_args = adsk.core.InputChangedEventArgs.cast(args)
@@ -130,30 +131,6 @@ class cmd_input_changed_handler(adsk.core.InputChangedEventHandler):
 
         except:
             ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
-
-""" #User input validation event handler
-class cmd_input_validation_handler(adsk.core.ValidateInputsEventHandler):
-    def __init__(self):
-        super().__init__()
-    def notify(self, args: adsk.core.ValidateInputsEventArgs):
-        try:
-            #Get inputs from firing event
-            event_args = adsk.core.ValidateInputsEventArgs.cast(args)
-            inputs = event_args.firingEvent.sender.commandInputs
-
-            #Track status of inputs
-            inputs_valid = True 
-
-            #Check validity of all inputs
-            for index in range(inputs.count):
-                input = inputs.item(index)
-                inputs_valid &= input.isValid
-
-            #Set overall validity of inputs
-            event_args.areInputsValid = inputs_valid
-
-        except:
-            ui.messageBox('Failed:\n{}'.format(traceback.format_exc())) """
 
 #Command execution preview handler
 class execute_preview_handler(adsk.core.CommandEventHandler):
@@ -242,11 +219,6 @@ class cmd_creation_handler(adsk.core.CommandCreatedEventHandler):
             cmd.inputChanged.add(on_input_changed)
             handlers.append(on_input_changed)
 
-            """ #setup command input validation event handler    
-            on_validate_inputs = cmd_input_validation_handler()
-            cmd.validateInputs.add(on_validate_inputs)
-            handlers.append(on_validate_inputs) """
-
             #setup command execution preview event handler
             on_execute_preview = execute_preview_handler()
             cmd.executePreview.add(on_execute_preview)
@@ -268,17 +240,19 @@ class cmd_creation_handler(adsk.core.CommandCreatedEventHandler):
             positive_inputs = []
             pos_zero_inputs = []
             ratio_inputs = []
+            collar_ratio_inputs = []
 
             #create inputs for Kresling dimensions
-            positive_inputs.append(tab_child_inputs1.addValueInput('edge_length', 'Edge Length', 'cm', adsk.core.ValueInput.createByReal(3)))
-            tab_child_inputs1.addIntegerSliderCommandInput('number_polygon_edges', 'Polygon Edge Count', 6, 10)
-            positive_inputs.append(tab_child_inputs1.addValueInput('wall_thickness', 'Wall Thickness', 'cm', adsk.core.ValueInput.createByReal(0.1)))
-            pos_zero_inputs.append(tab_child_inputs1.addValueInput('lamb', 'Lambda', '', adsk.core.ValueInput.createByReal(0.75)))
-            pos_zero_inputs.append(tab_child_inputs1.addValueInput('chamber_length', 'Length of Inner Chambers', 'cm', adsk.core.ValueInput.createByReal(0)))
-            pos_zero_inputs.append(tab_child_inputs1.addValueInput('hinge_offset', 'Hinge Offset', 'cm', adsk.core.ValueInput.createByReal(0.075)))
-            ratio_inputs.append(tab_child_inputs1.addValueInput('ratio_hinge_to_wall', 'Hinge to Wall Ratio', '', adsk.core.ValueInput.createByReal(0)))
-            ratio_inputs.append(tab_child_inputs1.addValueInput('ratio_base_to_wall', 'Base to Wall Ratio', '', adsk.core.ValueInput.createByReal(1)))
-            ratio_inputs.append(tab_child_inputs1.addValueInput('ratio_lip_to_wall', 'Lip to Wall Ratio', '', adsk.core.ValueInput.createByReal(1)))
+            positive_inputs.append(tab_child_inputs1.addValueInput('edge_length', 'Edge Length', 'cm', adsk.core.ValueInput.createByReal(edge_length)))
+            tab_child_inputs1.addIntegerSliderCommandInput('number_polygon_edges', 'Polygon Edge Count', 3, 18)
+            tab_child_inputs1.itemById('number_polygon_edges').expressionOne = str(number_polygon_edges)
+            positive_inputs.append(tab_child_inputs1.addValueInput('wall_thickness', 'Wall Thickness', 'cm', adsk.core.ValueInput.createByReal(wall_thickness)))
+            positive_inputs.append(tab_child_inputs1.addValueInput('lamb', 'Lambda', '', adsk.core.ValueInput.createByReal(lamb)))
+            pos_zero_inputs.append(tab_child_inputs1.addValueInput('chamber_length', 'Length of Inner Chambers', 'cm', adsk.core.ValueInput.createByReal(chamber_length)))
+            pos_zero_inputs.append(tab_child_inputs1.addValueInput('hinge_offset', 'Hinge Offset', 'cm', adsk.core.ValueInput.createByReal(hinge_offset)))
+            ratio_inputs.append(tab_child_inputs1.addValueInput('ratio_hinge_to_wall', 'Hinge to Wall Ratio', '', adsk.core.ValueInput.createByReal(ratio_hinge_to_wall)))
+            ratio_inputs.append(tab_child_inputs1.addValueInput('ratio_base_to_wall', 'Base to Wall Ratio', '', adsk.core.ValueInput.createByReal(ratio_base_to_wall)))
+            ratio_inputs.append(tab_child_inputs1.addValueInput('ratio_lip_to_wall', 'Lip to Wall Ratio', '', adsk.core.ValueInput.createByReal(ratio_lip_to_wall)))
 
             #create tab for additional settings
             tab_input2 = inputs.addTabCommandInput('tab_2', 'Additional Settings')
@@ -293,15 +267,15 @@ class cmd_creation_handler(adsk.core.CommandCreatedEventHandler):
             group_child_inputs2 = group_input2.children
 
             #Create inputs for collar settings
-            pos_zero_inputs.append(group_child_inputs1.addValueInput('collar_height', 'Collar Height', 'cm', adsk.core.ValueInput.createByReal(0.55)))
-            ratio_inputs.append(group_child_inputs1.addValueInput('collar_ratio', 'Collar Ratio', '', adsk.core.ValueInput.createByReal(0.25/0.55)))
-            positive_inputs.append(group_child_inputs1.addValueInput('collar_thickness', 'Collar Thickness', 'cm', adsk.core.ValueInput.createByReal(0.2)))
-            group_child_inputs1.addBoolValueInput('gen_collar_holes', 'Generate Holes in Collar?', True, '', True)
-            group_child_inputs1.addBoolValueInput('gen_symmetric_collars', 'Generate Symmetric Collars?', True, '', False)
+            pos_zero_inputs.append(group_child_inputs1.addValueInput('collar_height', 'Collar Height', 'cm', adsk.core.ValueInput.createByReal(collar_height)))
+            collar_ratio_inputs.append(group_child_inputs1.addValueInput('collar_ratio', 'Fractional Size of Collar Holes', '', adsk.core.ValueInput.createByReal(collar_ratio)))
+            positive_inputs.append(group_child_inputs1.addValueInput('collar_thickness', 'Collar Thickness at Corner', 'cm', adsk.core.ValueInput.createByReal(collar_thickness)))
+            group_child_inputs1.addBoolValueInput('gen_collar_holes', 'Generate Holes in Collar?', True, '', gen_collar_holes)
+            group_child_inputs1.addBoolValueInput('gen_symmetric_collars', 'Generate Symmetric Collars?', True, '', gen_symmetric_collars)
             
             #Create inputs for lid settings
-            group_child_inputs2.addBoolValueInput('keep_lid', 'Keep Lid?', True, '', True)
-            pos_zero_inputs.append(group_child_inputs2.addValueInput('tube_OD', 'Tube Outer Diameter', 'cm', adsk.core.ValueInput.createByReal(0.28)))
+            group_child_inputs2.addBoolValueInput('keep_lid', 'Keep Lid?', True, '', keep_lid)
+            pos_zero_inputs.append(group_child_inputs2.addValueInput('tube_OD', 'Tube Outer Diameter', 'cm', adsk.core.ValueInput.createByReal(tube_OD)))
 
             #Set limits for input settings
             for pos_input in positive_inputs:
@@ -309,12 +283,18 @@ class cmd_creation_handler(adsk.core.CommandCreatedEventHandler):
                 pos_input.isMinimumInclusive = False
 
             for pos_zero_input in pos_zero_inputs:
-                pos_input.minimumValue = 0
-                pos_input.isMinimumInclusive = True
+                pos_zero_input.minimumValue = 0
+                pos_zero_input.isMinimumInclusive = True
 
             for ratio_input in ratio_inputs:
                 ratio_input.minimumValue = 0
                 ratio_input.maximumValue = 1
+
+            for collar_ratio_input in collar_ratio_inputs:
+                collar_ratio_input.minimumValue = 0
+                collar_ratio_input.maximumValue = 1
+                collar_ratio_input.isMinimumInclusive = False
+                collar_ratio_input.isMaximumInclusive = False
 
 
         except:
@@ -685,6 +665,7 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
 
         #Draw upper and lower Kresling triangles from point lists
         circular_pattern_bodies = adsk.core.ObjectCollection.create() #create collection to pattern
+        combined_kresling_bodies = adsk.core.ObjectCollection.create() #create collection to combine Kresling parts
         
         for lower_count in range(2):    
             #draw Kresling polygons for bottom of module, then top of module
@@ -810,6 +791,10 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
                         rotate_lid_bodies = adsk.core.ObjectCollection.create()
                         rotate_lid_bodies.add(mirrored_lid_body)
                         rotated_lid = rotate_around_z(rotate_lid_bodies, top_rotation_angle)
+                        rotated_lid_body = rotated_lid.bodies.item(0)
+
+                        #Add lid to combine list
+                        combined_kresling_bodies.add(rotated_lid_body)
 
                     #Cut tubing
                     if tube_OD > 0:
@@ -822,7 +807,19 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
             
         #Circular pattern all bodies by the number of Kresling polygon edges
         patterned_kresling = circular_pattern(circular_pattern_bodies, number_polygon_edges)
-        body_list.append(patterned_kresling)
+
+        #Combine Kresling
+        for item_count in range(patterned_kresling.bodies.count - 1): #ignore the first body
+            combined_kresling_bodies.add(patterned_kresling.bodies.item(item_count+1))
+        tool_kresling_body = patterned_kresling.bodies.item(0)
+        combined_kresling = combine_bodies(tool_kresling_body, combined_kresling_bodies)
+        combined_kresling_body = combined_kresling.bodies.item(0)
+
+        #Rename Kresling body according to key variables
+        kresling_name = '|' + str(edge_length) + '-EL_' + str(number_polygon_edges) + '-PE_' + str(wall_thickness) + '-WT_' + str(lamb) + '-LA_' + str(height_compressed) + '-HC|' + str(chamber_length) + '-CL|' + str(collar_height) + '-CH_' + str(gen_symmetric_collars) + '-SC|'
+        combined_kresling_body.name = kresling_name
+
+        body_list.append(combined_kresling_body)
         
         if chamber_length > 0:
             circular_chamber_bodies = adsk.core.ObjectCollection.create() #create collection to pattern
@@ -869,15 +866,15 @@ try:
             cmd_def.deleteMe()
     cmd_def = ui.commandDefinitions.addButtonDefinition('input_parameters', 'Kresling Input Parameters', 'Input parameters to generate Kresling.')
 
-    # Connect to the command created event.
+    # Connect to command created event
     on_command_created = cmd_creation_handler()
     cmd_def.commandCreated.add(on_command_created)
     handlers.append(on_command_created)
 
-    # Execute the command definition.
+    # Execute command definition
     cmd_def.execute()
 
-    # Prevent this module from being terminated when the script returns, because we are waiting for event handlers to fire.
+    # Prevent module terminimation and wait for event firing
     adsk.autoTerminate(False)
 except:
     if ui:
