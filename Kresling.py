@@ -15,82 +15,500 @@ phi -> half_inner_angle
 '''
 
 # adsk are libraries for Python Fusion API
-import adsk.core, adsk.fusion, adsk.cam
+import adsk.core, adsk.fusion, adsk.cam, traceback
 import math
 
+########### BEGIN USER MODIFIED PARAMETERS ############
 
 #Kresling dimensions 
 # all in cm
 edge_length = 3
 number_polygon_edges = 6 
-hinge_thickness = 0.125
+wall_thickness = 0.1
 lamb = 0.75
-tube_OD = 0.5
 height_compressed = 1
-wall_thickness = 0
-chamber_length = 0
+chamber_length = 0 #1.5
 
-#Calculate hinge and base thicknesses from ratios (do not change these values)
-#hinge_thickness = wall_thickness * ratio_hinge_to_wall
+#The distance between the original Kresling triangle and the hinge Kresling triangle
+hinge_offset = 0.2
+#this needs to be recalculated
+
+#Collar dimensions
+collar_height = 0.55
+collar_ratio = 0.25/0.55
+collar_thickness = wall_thickness * 2
+gen_collar_holes = True
+gen_symmetric_collars = False
+
+#Generate lid if true, otherwise generate Kresling without the lid
+keep_lid = True
+tube_OD = 0.28
+
+ratio_hinge_to_wall = 0
 ratio_base_to_wall = 1
-ratio_lip_to_wall = 0
+ratio_lip_to_wall = 1
 
-#calculate Kresling dimensions from parameters above
-radius = edge_length * (2 * math.sin( math.pi / number_polygon_edges ))
-half_inner_angle = math.pi / number_polygon_edges
-top_rotation_angle_compressed = 2*lamb*(math.pi/2 - half_inner_angle)
-top_rotation_angle = 2*(1-lamb)*(math.pi/2 - half_inner_angle)
-height = math.sqrt(height_compressed**2 + 2*radius**2*(math.cos(top_rotation_angle + 2*half_inner_angle) - math.cos(top_rotation_angle_compressed + 2*half_inner_angle)))
+########### END USER MODIFIED PARAMETERS ############
 
-min_rad = math.sqrt((height**2-height_compressed**2)/(2*(math.cos(2*half_inner_angle) - math.cos(top_rotation_angle_compressed + 2*half_inner_angle)))) +0.1
+#Global event handlers tracker
+handlers = []
 
-'''
-#problem here is that chamber radius is high to get rotation and compression. 
-if (min_rad > (radius - chamber_length)):
-    chamber_length = 0 
-else:
-    top_rotation_angle_chamber = math.acos(((height**2-height_compressed**2)/2/(radius -chamber_length)**2+math.cos(top_rotation_angle_compressed + 2*half_inner_angle)))-2*half_inner_angle
-'''
+#Command destruction event handler         
+class cmd_destroy_handler(adsk.core.CommandEventHandler):
+    def __init__(self):
+        super().__init__()
+    def notify(self, args):
+        try:
+           #Terminate script when command is destroyed
+            adsk.terminate()
+        except:
+            ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
 
-base_thickness = (wall_thickness + hinge_thickness) * ratio_base_to_wall
-lip_thickness = (wall_thickness + hinge_thickness) * ratio_lip_to_wall
+#Command execution (hitting 'OK') event handler
+#This is NOT USED due to the usage of the command execution preview event handler
+class on_execute_handler(adsk.core.CommandEventHandler):
+    def __init__(self):
+        super().__init__()
+    def notify(self, args):
+        try:
+            #Set global variables for all inputs
+            global edge_length, number_polygon_edges, wall_thickness, lamb, chamber_length, hinge_offset
+            global ratio_hinge_to_wall, ratio_base_to_wall, ratio_lip_to_wall
+            global collar_height, collar_ratio, collar_thickness, gen_collar_holes, gen_symmetric_collars
+            global keep_lid, tube_OD
+            global radius, half_inner_angle, top_rotation_angle, top_rotation_angle_compressed, height
 
-#general purpose functions to generate Kresling points, sketches, and lofts
+            #get inputs
+            inputs = args.command.commandInputs
 
-def generate_polygon_points(number_of_kresling_edges, wall_fraction, offset_angle, sine_rotation):
+            #Update variables with new user inputs
+            edge_length = inputs.itemById('edge_length').value
+            number_polygon_edges = inputs.itemById('number_polygon_edges').valueOne
+            wall_thickness = inputs.itemById('wall_thickness').value
+            lamb = inputs.itemById('lamb').value
+            chamber_length = inputs.itemById('chamber_length').value
+            hinge_offset = inputs.itemById('hinge_offset').value
+            ratio_hinge_to_wall = inputs.itemById('ratio_hinge_to_wall').value
+            ratio_base_to_wall = inputs.itemById('ratio_base_to_wall').value
+            ratio_lip_to_wall = inputs.itemById('ratio_lip_to_wall').value
+            collar_height = inputs.itemById('collar_height').value
+            collar_ratio = inputs.itemById('collar_ratio').value
+            collar_thickness = inputs.itemById('collar_thickness').value
+            gen_collar_holes = inputs.itemById('gen_collar_holes').value
+            gen_symmetric_collars = inputs.itemById('gen_symmetric_collars').value
+            keep_lid = inputs.itemById('keep_lid').value
+            tube_OD = inputs.itemById('tube_OD').value
+
+            #calculate Kresling dimensions from input parameters
+            radius = edge_length * (2 * math.sin( math.pi / number_polygon_edges ))
+            half_inner_angle = math.pi / number_polygon_edges
+            top_rotation_angle_compressed = 2*lamb*(math.pi/2 - half_inner_angle)
+            top_rotation_angle = 2*(1-lamb)*(math.pi/2 - half_inner_angle)
+            height = math.sqrt(height_compressed**2 + 2*radius**2*(math.cos(top_rotation_angle + 2*half_inner_angle) - math.cos(top_rotation_angle_compressed + 2*half_inner_angle)))
+
+            #Calculate hinge and base thicknesses from ratios 
+            hinge_thickness = wall_thickness * ratio_hinge_to_wall
+            base_thickness = wall_thickness * ratio_base_to_wall
+            lip_thickness = wall_thickness * ratio_lip_to_wall
+
+            # Make Kresling structure
+            Kresling = make_Kresling_body(loftFeats, radius, wall_thickness, hinge_thickness, number_polygon_edges, height, top_rotation_angle, base_thickness, lip_thickness, collar_height)
+
+        except:
+            ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
+
+#User input change event handler
+#CURRENTLY UNUSED
+class cmd_input_changed_handler(adsk.core.InputChangedEventHandler):
+    def __init__(self):
+        super().__init__()
+    def notify(self, args):
+        try:
+            #Watch inputs
+            adsk.core.InputChangedEventArgs.cast(args)
+            event_args = adsk.core.InputChangedEventArgs.cast(args)
+            inputs = event_args.inputs
+
+        except:
+            ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
+
+#Command execution preview handler
+class execute_preview_handler(adsk.core.CommandEventHandler):
+    def __init__(self):
+        super().__init__()
+    def notify(self, args: adsk.core.CommandEventArgs):
+        try:
+            #get inputs
+            event_args = adsk.core.CommandEventArgs.cast(args)
+            inputs = event_args.command.commandInputs
+            
+            #Track status of inputs
+            inputs_valid = True
+
+            #Check validity of value inputs
+            for index in range(inputs.count):
+                input = inputs.item(index)
+                if (input.classType() == adsk.core.ValueCommandInput.classType()):
+                    inputs_valid &= input.isValidExpression
+            
+            #Preview ONLY if inputs are valid
+            if inputs_valid:
+
+                #Set global variables for all inputs
+                global edge_length, number_polygon_edges, wall_thickness, lamb, chamber_length, hinge_offset
+                global ratio_hinge_to_wall, ratio_base_to_wall, ratio_lip_to_wall
+                global collar_height, collar_ratio, collar_thickness, gen_collar_holes, gen_symmetric_collars
+                global keep_lid, tube_OD
+                global radius, half_inner_angle, top_rotation_angle, top_rotation_angle_compressed, height
+
+                #Update variables with new user inputs
+                edge_length = inputs.itemById('edge_length').value
+                number_polygon_edges = inputs.itemById('number_polygon_edges').valueOne
+                wall_thickness = inputs.itemById('wall_thickness').value
+                lamb = inputs.itemById('lamb').value
+                chamber_length = inputs.itemById('chamber_length').value
+                hinge_offset = inputs.itemById('hinge_offset').value
+                ratio_hinge_to_wall = inputs.itemById('ratio_hinge_to_wall').value
+                ratio_base_to_wall = inputs.itemById('ratio_base_to_wall').value
+                ratio_lip_to_wall = inputs.itemById('ratio_lip_to_wall').value
+                collar_height = inputs.itemById('collar_height').value
+                collar_ratio = inputs.itemById('collar_ratio').value
+                collar_thickness = inputs.itemById('collar_thickness').value
+                gen_collar_holes = inputs.itemById('gen_collar_holes').value
+                gen_symmetric_collars = inputs.itemById('gen_symmetric_collars').value
+                keep_lid = inputs.itemById('keep_lid').value
+                tube_OD = inputs.itemById('tube_OD').value
+
+                #calculate Kresling dimensions from input parameters
+                radius = edge_length * (2 * math.sin( math.pi / number_polygon_edges ))
+                half_inner_angle = math.pi / number_polygon_edges
+                top_rotation_angle_compressed = 2*lamb*(math.pi/2 - half_inner_angle)
+                top_rotation_angle = 2*(1-lamb)*(math.pi/2 - half_inner_angle)
+                height = math.sqrt(height_compressed**2 + 2*radius**2*(math.cos(top_rotation_angle + 2*half_inner_angle) - math.cos(top_rotation_angle_compressed + 2*half_inner_angle)))
+
+                #Calculate hinge and base thicknesses from ratios 
+                hinge_thickness = wall_thickness * ratio_hinge_to_wall
+                base_thickness = wall_thickness * ratio_base_to_wall
+                lip_thickness = wall_thickness * ratio_lip_to_wall
+
+                #Make Kresling structure
+                Kresling = make_Kresling_body(loftFeats, radius, wall_thickness, hinge_thickness, number_polygon_edges, height, top_rotation_angle, base_thickness, lip_thickness, collar_height)
+
+                #Do not use normal execute command
+                event_args.isValidResult = True
+                
+        except:
+            ui.messageBox('Failed:\n{}'.format(traceback.format_exc())) 
+
+#Command creation event handler
+class cmd_creation_handler(adsk.core.CommandCreatedEventHandler):
+    def __init__(self):
+        super().__init__()
+    def notify(self, args):
+        try:
+            #get created command
+            cmd = adsk.core.Command.cast(args.command)
+
+            #setup command destruction event handler
+            on_destroy = cmd_destroy_handler()
+            cmd.destroy.add(on_destroy)
+            handlers.append(on_destroy)
+
+            #setup command input change event handler       
+            on_input_changed = cmd_input_changed_handler()
+            cmd.inputChanged.add(on_input_changed)
+            handlers.append(on_input_changed)
+
+            #setup command execution preview event handler
+            on_execute_preview = execute_preview_handler()
+            cmd.executePreview.add(on_execute_preview)
+            handlers.append(on_execute_preview)
+
+            #setup command execution event handler
+            on_execute = on_execute_handler()
+            cmd.execute.add(on_execute)
+            handlers.append(on_execute)
+
+            #get command inputs collection
+            inputs = cmd.commandInputs
+
+            #create tab for Kresling dimensions
+            tab_input1 = inputs.addTabCommandInput('tab_1', 'Kresling Dimensions')
+            tab_child_inputs1 = tab_input1.children
+
+            #track inputs
+            positive_inputs = []
+            pos_zero_inputs = []
+            ratio_inputs = []
+            collar_ratio_inputs = []
+
+            #create inputs for Kresling dimensions
+            positive_inputs.append(tab_child_inputs1.addValueInput('edge_length', 'Edge Length', 'cm', adsk.core.ValueInput.createByReal(edge_length)))
+            tab_child_inputs1.addIntegerSliderCommandInput('number_polygon_edges', 'Polygon Edge Count', 3, 18)
+            tab_child_inputs1.itemById('number_polygon_edges').expressionOne = str(number_polygon_edges)
+            positive_inputs.append(tab_child_inputs1.addValueInput('wall_thickness', 'Wall Thickness', 'cm', adsk.core.ValueInput.createByReal(wall_thickness)))
+            positive_inputs.append(tab_child_inputs1.addValueInput('lamb', 'Lambda', '', adsk.core.ValueInput.createByReal(lamb)))
+            pos_zero_inputs.append(tab_child_inputs1.addValueInput('chamber_length', 'Length of Inner Chambers', 'cm', adsk.core.ValueInput.createByReal(chamber_length)))
+            pos_zero_inputs.append(tab_child_inputs1.addValueInput('hinge_offset', 'Hinge Offset', 'cm', adsk.core.ValueInput.createByReal(hinge_offset)))
+            ratio_inputs.append(tab_child_inputs1.addValueInput('ratio_hinge_to_wall', 'Hinge to Wall Ratio', '', adsk.core.ValueInput.createByReal(ratio_hinge_to_wall)))
+            ratio_inputs.append(tab_child_inputs1.addValueInput('ratio_base_to_wall', 'Base to Wall Ratio', '', adsk.core.ValueInput.createByReal(ratio_base_to_wall)))
+            ratio_inputs.append(tab_child_inputs1.addValueInput('ratio_lip_to_wall', 'Lip to Wall Ratio', '', adsk.core.ValueInput.createByReal(ratio_lip_to_wall)))
+
+            #create tab for additional settings
+            tab_input2 = inputs.addTabCommandInput('tab_2', 'Additional Settings')
+            tab_child_inputs2 = tab_input2.children
+
+            #create group inputs to group additional settings
+            group_input1 = tab_child_inputs2.addGroupCommandInput('collar', 'Collar Settings')
+            group_input1.isExpanded = True
+            group_child_inputs1 = group_input1.children
+            group_input2 = tab_child_inputs2.addGroupCommandInput('lid', 'Lid Settings')
+            group_input2.isExpanded = True
+            group_child_inputs2 = group_input2.children
+
+            #Create inputs for collar settings
+            pos_zero_inputs.append(group_child_inputs1.addValueInput('collar_height', 'Collar Height', 'cm', adsk.core.ValueInput.createByReal(collar_height)))
+            collar_ratio_inputs.append(group_child_inputs1.addValueInput('collar_ratio', 'Fractional Size of Collar Holes', '', adsk.core.ValueInput.createByReal(collar_ratio)))
+            positive_inputs.append(group_child_inputs1.addValueInput('collar_thickness', 'Collar Thickness at Corner', 'cm', adsk.core.ValueInput.createByReal(collar_thickness)))
+            group_child_inputs1.addBoolValueInput('gen_collar_holes', 'Generate Holes in Collar?', True, '', gen_collar_holes)
+            group_child_inputs1.addBoolValueInput('gen_symmetric_collars', 'Generate Symmetric Collars?', True, '', gen_symmetric_collars)
+            
+            #Create inputs for lid settings
+            group_child_inputs2.addBoolValueInput('keep_lid', 'Keep Lid?', True, '', keep_lid)
+            pos_zero_inputs.append(group_child_inputs2.addValueInput('tube_OD', 'Tube Outer Diameter', 'cm', adsk.core.ValueInput.createByReal(tube_OD)))
+
+            #Set limits for input settings
+            for pos_input in positive_inputs:
+                pos_input.minimumValue = 0
+                pos_input.isMinimumInclusive = False
+
+            for pos_zero_input in pos_zero_inputs:
+                pos_zero_input.minimumValue = 0
+                pos_zero_input.isMinimumInclusive = True
+
+            for ratio_input in ratio_inputs:
+                ratio_input.minimumValue = 0
+                ratio_input.maximumValue = 1
+
+            for collar_ratio_input in collar_ratio_inputs:
+                collar_ratio_input.minimumValue = 0
+                collar_ratio_input.maximumValue = 1
+                collar_ratio_input.isMinimumInclusive = False
+                collar_ratio_input.isMaximumInclusive = False
+
+
+        except:
+            ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
+
+def generate_polygon_points(number_of_kresling_edges, offset_angle, sine_rotation):
     polygon_points = \
-        [math.cos((2 * k * math.pi / number_of_kresling_edges) - offset_angle - sine_rotation) \
-        for k in range(number_of_kresling_edges)]
+        [math.cos((2 * (k // 2) * math.pi / number_of_kresling_edges) - offset_angle * (k % 2) - sine_rotation) \
+        for k in range(4)]
     
-    low_wall_points = \
-        [wall_fraction * math.cos((2*(k - 1) * math.pi) / number_of_kresling_edges - offset_angle - sine_rotation) \
-         for k in range(number_of_kresling_edges)]
-    
-    last_val = low_wall_points.pop(0)
-    low_wall_points.append(last_val)
-
-    high_wall_points = \
-        [wall_fraction * math.cos((2*(k + 1) * math.pi) / number_of_kresling_edges - offset_angle - sine_rotation) \
-         for k in range(number_of_kresling_edges)]
-	
-    return [polygon_points, high_wall_points, low_wall_points] 
+    return polygon_points
 
 def gen_sketch(points_x, points_y, points_z):
-    #Generalized sketch from point list in X, Y, Z
-    new_sketch = sketchObjs.add(rootComp.xYConstructionPlane)
+    #Generate closed sketch from point list in X, Y, Z
+    pgon_sketch = sketchObjs.add(rootComp.xYConstructionPlane)
 
     #define a shape two points at a time
-    Kres_lines = new_sketch.sketchCurves.sketchLines
+    pgon_lines = pgon_sketch.sketchCurves.sketchLines    
     for k in range(len(points_x)):
         #Wrap around to 0th point again to enclose the polygon
         point0 = adsk.core.Point3D.create(points_x[k], points_y[k], points_z[k])
         point1 = adsk.core.Point3D.create(points_x[((k+1) % len(points_x))], points_y[((k+1) % len(points_x))], points_z[((k+1) % len(points_x))])
     
         #draw the shape by adding the line
-        Kres_sketch = Kres_lines.addByTwoPoints(point0, point1)
+        pgon_sketch.sketchCurves.sketchLines.addByTwoPoints(point0, point1)
     
-    profile = new_sketch.profiles.item(0)
-    return profile     
+    profile = pgon_sketch.profiles.item(0)
+    return profile 
+
+def add_loft(loft_features, profile_obj_array):
+    #Lofts objects from sketch profiles
+    loft_input = loft_features.createInput(adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
+    loft0 = loft_input.loftSections
+    for x in profile_obj_array:
+        loft0.add(x)
+    loft_input.isSolid = True 
+    loft_output = loft_features.add(loft_input)
+    return loft_output
+
+def make_base(x_points, y_points, radius, height, thickness, lofts, body_list):
+
+    #Take exterior points and create two drawings at spacing t from each other
+    base_lower = gen_sketch([i * radius for i in x_points], [i * radius for i in y_points], [height for k in range(len(x_points))])
+    base_upper = gen_sketch([i * radius for i in x_points], [i * radius for i in y_points], [height + thickness for k in range(len(x_points))])
+
+    #Loft between two drawings to make base
+    base_loft = add_loft(lofts,[base_lower,base_upper])
+    base_body = base_loft.bodies.item(0)
+    body_list.append(base_body) 
+
+    return base_body  
+
+def make_collar(x_points, y_points, radius, height, thickness, collar_height, collar_ratio, collar_thickness, gen_collar_holes, lofts, body_list):
+
+    #Define the outer points of the quadrilateral of the collar
+    x_coord = [i * radius for i in x_points]
+    y_coord = [i * radius for i in y_points]
+
+    ## LOWER QUADRILATERAL COORDINATES ##
+    #Define z height
+    z_coord_bottom = [height for k in range(4)]
+
+    #Define the inner points of the lower quadrilateral of the collar
+    distance_ratio_bottom = (radius - thickness) / radius
+    x_inner_bottom = [i * distance_ratio_bottom for i in reversed(x_coord)]
+    y_inner_bottom = [i * distance_ratio_bottom for i in reversed(y_coord)]
+
+    #Consolidate coordinates
+    x_coord_bottom = x_coord + x_inner_bottom
+    y_coord_bottom = y_coord + y_inner_bottom
+
+    ## MIDDLE AND UPPER QUADRILATERAL COORDINATES
+    #Define z height
+    middle_height = height + (collar_height * collar_ratio)
+    top_height = height + collar_height
+    z_coord_middle = [middle_height] * 4
+    z_coord_top = [top_height] * 4
+
+    #Define the inner points of the upper quadrilaterals of the collar
+    distance_ratio_upper = (radius - collar_thickness) / radius
+    x_inner_upper = [i * distance_ratio_upper for i in reversed(x_coord)]
+    y_inner_upper = [i * distance_ratio_upper for i in reversed(y_coord)]
+
+    #Consolidate coordinates
+    x_coord_upper = x_coord + x_inner_upper
+    y_coord_upper = y_coord + y_inner_upper
+
+    #Draw quadrilaterals
+    bottom_quad = gen_sketch(x_coord_bottom, y_coord_bottom, z_coord_bottom)
+    middle_quad = gen_sketch(x_coord_upper, y_coord_upper, z_coord_middle)
+    top_quad = gen_sketch(x_coord_upper, y_coord_upper, z_coord_top)
+
+    #Loft quadrilaterials
+    lower_loft = add_loft(lofts,[bottom_quad, middle_quad])
+    lower_body = lower_loft.bodies.item(0)
+    upper_loft = add_loft(lofts,[middle_quad, top_quad])
+    upper_body = upper_loft.bodies.item(0)
+
+    #Combine into one collar body
+    tools = adsk.core.ObjectCollection.create()
+    tools.add(upper_body)
+    combined_collar = combine_bodies(lower_body, tools)
+    combined_collar_body = combined_collar.bodies.item(0)
+    body_list.append(combined_collar_body)
+
+    #GENERATE HOLES IF NEEDED
+    if gen_collar_holes:
+        #Find the point in the middle of the collar
+        x_coord_hole = sum(x_coord)/len(x_coord)
+        y_coord_hole = sum(y_coord)/len(y_coord)
+        z_coord_hole = (height + top_height)/2
+        hole_radius = (top_height - middle_height)/2
+
+        #Find circle plane
+        hole_plane_sketch = gen_sketch(x_coord * 2, y_coord * 2, [height, height] + [height + collar_height] * 2)
+        hole_plane = construct_offset_plane(hole_plane_sketch, 0)
+
+        # #Sketch circle
+        hole_sketch = sketchObjs.add(hole_plane)
+        hole_sketch_circle = hole_sketch.sketchCurves.sketchCircles
+        hole_coordinates = hole_sketch.modelToSketchSpace(adsk.core.Point3D.create(x_coord_hole, y_coord_hole, z_coord_hole))
+        cut_hole = hole_sketch_circle.addByCenterRadius(hole_coordinates, hole_radius)
+
+        #Extrude circle
+        cut_input = extrudeFeats.createInput(hole_sketch.profiles.item(0), adsk.fusion.FeatureOperations.CutFeatureOperation)
+        cut_distance = adsk.core.ValueInput.createByReal(radius*2)
+        cut_input.setSymmetricExtent(cut_distance, True)
+        cut_input.participantBodies = body_list
+        ext = extrudeFeats.add(cut_input)
+
+    return combined_collar_body
+
+def createTubing(height, number_polygon_edges, top_rotation_angle, thickness, tube_OD):
+    #Add holes for tubing
+    #create offset plane from XY that's equal to the height of the Kresling
+    top_plane = construct_offset_plane(rootComp.xYConstructionPlane, height)
+    #sketch circles
+    cut_circle_sketch = sketchObjs.add(top_plane)
+    extrude_circle_sketch = sketchObjs.add(top_plane)
+    cut_circles = cut_circle_sketch.sketchCurves.sketchCircles
+    extrude_circles = extrude_circle_sketch.sketchCurves.sketchCircles
+    #center circle
+    cut_circles.addByCenterRadius(adsk.core.Point3D.create(0,0,0), tube_OD/2)
+    extrude_circles.addByCenterRadius(adsk.core.Point3D.create(0,0,0), tube_OD/2 + thickness)
+    #outside circles
+    circleAngle = 2*math.pi/number_polygon_edges - top_rotation_angle
+    for circle_count in range(3):
+        #circle cutouts
+        circleX = 2*radius/3 * math.cos(circleAngle + circle_count*2*math.pi/3)
+        circleY = 2*radius/3 * math.sin(circleAngle + circle_count*2*math.pi/3)
+        cut_circles.addByCenterRadius(adsk.core.Point3D.create(circleX,circleY,0), tube_OD/2)
+        #circle lips
+        extrude_circles.addByCenterRadius(adsk.core.Point3D.create(circleX,circleY,0), tube_OD/2 + thickness)
+
+    circle_bodies = adsk.core.ObjectCollection.create()
+
+    #Extrude lips for tubing
+    for circle_count in range(4):
+        ext_input = extrudeFeats.createInput(extrude_circle_sketch.profiles.item(circle_count), adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
+        distance = adsk.core.ValueInput.createByReal(thickness*2)
+        ext_input.setDistanceExtent(False, distance)
+        ext = extrudeFeats.add(ext_input)
+        ext_body = ext.bodies.item(0)
+        circle_bodies.add(ext_body)
+
+    #Cut circles for tubing
+    for circle_count in range(4):
+        cut_input = extrudeFeats.createInput(cut_circle_sketch.profiles.item(circle_count), adsk.fusion.FeatureOperations.CutFeatureOperation)
+        distance = adsk.core.ValueInput.createByReal(thickness*2)
+        cut_input.setDistanceExtent(False, distance)
+        ext = extrudeFeats.add(cut_input)
+    
+    return circle_bodies
+
+def make_chambers(lofts, outer_radius, inner_radius, chamber_thickness, draw_pts_x, draw_pts_y, draw_pts_z):
+    chamber_bodies = []
+
+    draw_pts_x = draw_pts_x[0:2]
+    draw_pts_y = draw_pts_y[0:2]
+
+    lower_chamber = make_chamber_walls(lofts, outer_radius, inner_radius, chamber_thickness, draw_pts_x, draw_pts_y, draw_pts_z[0:3], chamber_bodies)
+    draw_pts_x.reverse()
+    draw_pts_y.reverse()
+    upper_chamber = make_chamber_walls(lofts, outer_radius, inner_radius, chamber_thickness, draw_pts_x, draw_pts_y, draw_pts_z[1:4], chamber_bodies)
+
+    return chamber_bodies
+
+def make_chamber_walls(lofts, outer_radius, inner_radius, chamber_thickness, draw_x, draw_y, draw_z, body_list):
+    if draw_z[1] > draw_z[0]: #if the bottom triangle is being drawn
+        second_radius = inner_radius
+    else:
+        second_radius = outer_radius
+
+    points_x = make_chamber_points(outer_radius, second_radius, inner_radius - wall_thickness, draw_x)
+    points_y = make_chamber_points(outer_radius, second_radius, inner_radius - wall_thickness, draw_y)
+
+    chamber_triangle = param_Kresling(1, points_x, points_y, draw_z)
+    chamber_parent = chamber_triangle.parentSketch
+
+    front_chamber = create_hinge_extrude(chamber_parent, 0, chamber_thickness, 0)
+    back_chamber = create_hinge_extrude(chamber_parent, 0, chamber_thickness, 1)
+    body_list.append(front_chamber)
+    body_list.append(back_chamber)
+
+    return body_list 
+
+def make_chamber_points(outer_radius, second_radius, inner_radius, draw_pts):
+    #Take in chamber parameters and output the points to either side of the corner to loft between
+    points_for_chamber = \
+        [outer_radius * draw_pts[0], \
+        second_radius * draw_pts[1], \
+        inner_radius * draw_pts[0]]
+
+    return points_for_chamber 
 
 def param_Kresling(radius, points_x, points_y, points_z):
     #Multiply all points by radius
@@ -101,174 +519,363 @@ def param_Kresling(radius, points_x, points_y, points_z):
     Kresling_profile = gen_sketch(points_x_parameterized, points_y_parameterized, points_z)
     return Kresling_profile
 
-def add_loft(loft_features,profile_obj_array):
-    #Lofts objects from sketch profiles
-    loft_input = loft_features.createInput(adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
-    loft0 = loft_input.loftSections
-    for x in profile_obj_array:
-        loft0.add(x)
-    loft_input.isSolid = True 
-    loft_output = loft_features.add(loft_input)
-    return loft_output
+def cut_combine(target_body, tool_body, keep_body):
+    #Cut the tool body out of the target body
+    tools = adsk.core.ObjectCollection.create()
+    tools.add(tool_body)
+    combine_input: adsk.fusion.CombineFeatureInput = combineFeats.createInput(target_body, tools)
+    #Keep or discard tool body
+    combine_input.isKeepToolBodies = keep_body
+    combine_input.operation = adsk.fusion.FeatureOperations.CutFeatureOperation
+    return combineFeats.add(combine_input)
 
-#base generation
+def combine_bodies(target_body, tool_body_list):
+    #target_body is a single body, tool_body_list is an Object Collection
+    combine_input = combineFeats.createInput(target_body, tool_body_list)
+    combine_input.operation = adsk.fusion.FeatureOperations.JoinFeatureOperation
+    combined_bodies_feat = combineFeats.add(combine_input)
+    return combined_bodies_feat
 
-def make_base(upper_x_points, upper_y_points, radius, height, thickness, lofts, body_list, tube_OD):
-
-    #Take exterior points and create two drawings at spacing t from each other
-    lip_lower_points = gen_sketch([i * radius for i in upper_x_points], [i * radius for i in upper_y_points], [height for k in range(len(upper_x_points))])
-    lip_upper_points = gen_sketch([i * radius for i in upper_x_points], [i * radius for i in upper_y_points], [height + thickness for k in range(len(upper_x_points))])
-
-    #Loft between two drawings to make base
-    loft_lip = add_loft(lofts,[lip_lower_points,lip_upper_points])
-    body_K_lip = loft_lip.bodies.item(0)
-    body_list.append(body_K_lip) 
-    
-    #Add holes for tubing
-    if tube_OD > 0: 
-        circle_sketch = sketchObjs.add(rootComp.xYConstructionPlane)
-        circles = circle_sketch.sketchCurves.sketchCircles
-        circles.addByCenterRadius(adsk.core.Point3D.create(0,0,0), tube_OD/2)
-        for circle_count in range(3):
-            circles.addByCenterRadius(adsk.core.Point3D.create(radius/2 * math.cos(math.pi/2 + 2*circle_count*math.pi/3),radius/2 * math.sin(math.pi/2 + 2*circle_count*math.pi/3),0), tube_OD/2)
-        
-        # Extrude holes for tubing.	
-        for circle_count in range(4):
-            extInput = extrudeFeats.createInput(circle_sketch.profiles.item(circle_count), adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
-            distance = adsk.core.ValueInput.createByReal(thickness)
-            extInput.setDistanceExtent(False, distance)
-            ext = extrudeFeats.add(extInput)
-    
-    return body_list
-
-#chamber generation functions
-
-def make_chamber_points(outer_radius, second_radius, inner_radius, first_pts, second_pts, angle_count, half_inner_angle, first_rot_angle, second_rot_angle, sine_rotation):
-    #Take in chamber parameters and output the points to either side of the corner to loft between
-    points_1st = \
-        [outer_radius * first_pts[((angle_count) % number_polygon_edges)] - (outer_radius - wall_thickness / 2) * math.sin((((angle_count) % number_polygon_edges)*2 + 1) * half_inner_angle- first_rot_angle - sine_rotation), \
-        second_radius * second_pts[((angle_count) % number_polygon_edges)] - (second_radius - wall_thickness / 2) * math.sin((((angle_count) % number_polygon_edges)*2 + 1) * half_inner_angle - second_rot_angle - sine_rotation), \
-        inner_radius * first_pts[((angle_count) % number_polygon_edges)] - (inner_radius - wall_thickness / 2) * math.sin((((angle_count) % number_polygon_edges)*2 + 1) * half_inner_angle - first_rot_angle - sine_rotation)]
-
-    points_2nd = \
-        [outer_radius * first_pts[((angle_count + 1) % number_polygon_edges)] - (wall_thickness / 2) * math.sin((((angle_count + 1) % number_polygon_edges)*2 + 1) * half_inner_angle - first_rot_angle - sine_rotation) , \
-        second_radius * second_pts[((angle_count + 1) % number_polygon_edges)] - (wall_thickness / 2) * math.sin((((angle_count + 1) % number_polygon_edges)*2 + 1) * half_inner_angle - second_rot_angle - sine_rotation), \
-        inner_radius * first_pts[((angle_count + 1) % number_polygon_edges)] - (wall_thickness / 2) * math.sin((((angle_count + 1) % number_polygon_edges)*2 + 1) * half_inner_angle - first_rot_angle - sine_rotation)]
-    return [points_1st, points_2nd]
-
-def make_chamber_walls(lofts, number_chambers, outer_radius, inner_radius, first_x, second_x, first_y, second_y, points_z, first_rot_angle, second_rot_angle, half_inner_angle, body_list):
-    #loft between anchor points to either side of the Kresling polygon corners
-    for item in range(number_chambers):
-        angle_count = (2 * item + number_polygon_edges - 1) 
-
-        if first_rot_angle == 0: #set whether the second radius is outer or inner depending on if it's top or bottom triangle
-            second_radius = inner_radius
-        else:
-            second_radius = outer_radius
-
-        points_x = make_chamber_points(outer_radius, second_radius, inner_radius, first_x, second_x, angle_count, half_inner_angle, first_rot_angle, second_rot_angle, 0)
-        points_y = make_chamber_points(outer_radius, second_radius, inner_radius, first_y, second_y, angle_count, half_inner_angle, first_rot_angle, second_rot_angle, math.pi/2)
-
-        inner_triangle = param_Kresling(1, points_x[0], points_y[0], points_z)
-        outer_triangle = param_Kresling(1, points_x[1], points_y[1], points_z)
-
-        lower_loft = add_loft(lofts,[inner_triangle,outer_triangle])
-        lower_bodies = lower_loft.bodies.item(0)
-        body_list.append(lower_bodies)
-    return body_list 
-
-def make_chambers(lofts, number_polygon_edges, outer_radius, inner_radius, top_rotation_angle, height, lower_x, lower_y, upper_x, upper_y):
-    body_list = []
-    number_chambers  = number_polygon_edges // 2
-    half_inner_angle = math.pi / number_polygon_edges
-
-    body_list = make_chamber_walls(lofts, number_chambers, outer_radius, inner_radius, lower_x, upper_x, lower_y, upper_y, [0, height, 0], 0, top_rotation_angle, half_inner_angle, body_list)
-    body_list = make_chamber_walls(lofts, number_chambers, outer_radius, inner_radius, upper_x, lower_x, upper_y, lower_y, [height, 0, height], top_rotation_angle, 0, half_inner_angle, body_list)
-    return body_list
+def mirror_bodies(mirror_plane, mirror_bodies):
+    #tool_body_list is an Object Collection
+    mirror_input = mirrorFeats.createInput(mirror_bodies, mirror_plane)
+    mirrored_body = mirrorFeats.add(mirror_input)
+    return mirrored_body
 
 
-def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_polygon_edges, height, top_rotation_angle, base_thickness, lip_thickness, tube_OD):
-    #Create each Kresling triangle according to specified dimensions
+def construct_offset_plane(plane_profile, offset_distance):
+    #create planes input
+    plane_input = cPlaneObjs.createInput()
 
-    body_list = [] #Make an empty body list to append new bodies to
+    #set offset distance
+    offset_value = adsk.core.ValueInput.createByReal(offset_distance)
+    plane_input.setByOffset(plane_profile, offset_value)
 
-    wall_fraction = wall_thickness / radius
-    #Create Kresling and hinge point lists for Kresling triangle points
-    lower_x = generate_polygon_points(number_polygon_edges, wall_fraction, 0, 0)
-    upper_x = generate_polygon_points(number_polygon_edges, wall_fraction, top_rotation_angle, 0)
-    lower_y = generate_polygon_points(number_polygon_edges, wall_fraction, 0, math.pi/2)
-    upper_y = generate_polygon_points(number_polygon_edges, wall_fraction, top_rotation_angle, math.pi/2)
+    #create the offset construction plane
+    offset_plane = cPlaneObjs.add(plane_input)
+
+    return offset_plane
+
+def project_sketch(input_sketch,working_plane):
+    #Make new sketch on the working plane
+    projected_sketch = sketchObjs.add(working_plane)
+
+    #Project curves of input sketch onto the working plane
+    for curve in input_sketch.sketchCurves:
+        projected_sketch.project(curve)
  
-    #Draw upper and lower Kresling triangles from point lists
-    for m in range(2):    
-        for k in range(number_polygon_edges):
+    return projected_sketch
 
-            if m == 0: #make upper or lower triangle, m == 0 is base of triangle at z = 0 (lower)
+def offset_sketch_inside(input_sketch, offset_distance):
+    #Find all geometry to be offset
+    offset_geometry = adsk.core.ObjectCollection.create()
+    input_lines = input_sketch.sketchCurves.sketchLines
+    offset_geometry.clear()
+    [offset_geometry.add(line) for line in input_lines]
 
-                points_z = [0, height, 0]
-                points_x = [lower_x[0][k], upper_x[0][k], lower_x[0][(k + 1) % number_polygon_edges]]
-                points_y = [lower_y[0][k], upper_y[0][k], lower_y[0][(k + 1) % number_polygon_edges]]
+    #Keep track of original sketches
+    original_sketch_count = input_sketch.sketchCurves.sketchLines.count
 
-                hinge_x = [lower_x[1][k] + lower_x[0][k], upper_x[0][k] * (1+ wall_fraction), lower_x[2][(k) % number_polygon_edges] + lower_x[0][(k + 1) % number_polygon_edges]]
-                hinge_y = [lower_y[1][k] + lower_y[0][k], upper_y[0][k] * (1+ wall_fraction), lower_y[2][(k) % number_polygon_edges] + lower_y[0][(k + 1) % number_polygon_edges]]
+    #Define offset direction by picking a point in the center of the geometry (centroid)
+    #Average the coordinate locations of all the sketch points in the geometry
+    x_tot = 0
+    y_tot = 0
+    z_tot = 0
+    for point in input_sketch.sketchPoints:
+        x_tot += point.geometry.x
+        y_tot += point.geometry.y
+        z_tot += point.geometry.z
+    total_points = input_sketch.sketchPoints.count
+    x_dir = x_tot / total_points
+    y_dir = y_tot / total_points
+    z_dir = z_tot / total_points
+    
+    offset_dir = adsk.core.Point3D.create(x_dir,y_dir,z_dir)
+
+    #Make original lines construction lines
+    for i in range(original_sketch_count):
+        input_sketch.sketchCurves.sketchLines.item(i).isConstruction = True
+
+    #Offset sketch inwards (smaller than original sketch) by specified distance
+    input_sketch.offset(offset_geometry, offset_dir, offset_distance)
+    
+    return
+
+def create_hinge_extrude(original_sketch, offset_from_original, hinge_loft_thickness, upper_or_lower):
+    #Get profile of original Kresling triangle sketch
+    original_profile = original_sketch.profiles.item(0)
+
+    #Create construction plane by offsetting the original profile by the hinge thickness
+    if upper_or_lower == 0: #0 is lower
+        hinge_plane_offset = hinge_loft_thickness
+    else:
+        hinge_plane_offset = hinge_loft_thickness * (-1) #if a hinge is being generated on an upper plane, the offset must be reversed
+         
+    hinge_plane = construct_offset_plane(original_profile, hinge_plane_offset)
+
+    #Project the original sketch onto the construction plane in a new sketch
+    hinge_sketch = project_sketch(original_sketch, hinge_plane)
+    #Offset the projection on the new sketch by however much the hinge triangle is smaller than the original
+    if offset_from_original != 0:
+        offset_sketch_inside(hinge_sketch, offset_from_original)
+
+    #Loft the original triangle to the hinge triangle
+    hinge_profile = hinge_sketch.profiles.item(0)
+    hinge_loft = add_loft(loftFeats,[original_profile, hinge_profile])
+
+    return hinge_loft
+
+def circular_pattern(input_bodies, pattern_num): 
+    #Pattern around the y-axis
+    z_axis = rootComp.zConstructionAxis
+    
+    #Define input
+    circle_pattern_input = circlePatternFeats.createInput(input_bodies, z_axis)
+    
+    # Create patternNum of copies
+    circle_pattern_input.quantity = adsk.core.ValueInput.createByReal(pattern_num)
+    
+    # Pattern symmetrically across 360 degrees
+    circle_pattern_input.totalAngle = adsk.core.ValueInput.createByString('360 deg')
+    circle_pattern_input.isSymmetric = True
+    
+    # Create the circular pattern
+    circle_pat_feat = circlePatternFeats.add(circle_pattern_input)
+
+    return circle_pat_feat
+
+def rotate_around_z(input_bodies, input_angle):
+    #input_bodies is an Object Collection of bodies
+    move_input = moveFeats.createInput2(input_bodies)
+    #Rotate around z-axis by top rotation angle
+    real_angle = adsk.core.ValueInput.createByReal(input_angle)
+    move_input.defineAsRotate(rootComp.zConstructionAxis, real_angle)
+    return moveFeats.add(move_input)
+
+def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_polygon_edges, height, top_rotation_angle, base_thickness, lip_thickness, collar_height):
+    try:
+        #Create each Kresling triangle according to specified dimensions
+
+        body_list = [] #Make an empty body list to append new bodies to
+
+        #Create point lists for Kresling triangle points
+        tri_points_x = generate_polygon_points(number_polygon_edges, top_rotation_angle, 0)
+        tri_points_y = generate_polygon_points(number_polygon_edges, top_rotation_angle, math.pi/2)
+        tri_points_z = [0, height, 0, height]
+
+        #Draw upper and lower Kresling triangles from point lists
+        circular_pattern_bodies = adsk.core.ObjectCollection.create() #create collection to pattern
+        combined_kresling_bodies = adsk.core.ObjectCollection.create() #create collection to combine Kresling parts
         
-            else:
-                points_z = [height, 0, height]
-                points_x = [upper_x[0][k],lower_x[0][(k + 1) % number_polygon_edges], upper_x[0][(k + 1) % number_polygon_edges]]
-                points_y = [upper_y[0][k],lower_y[0][(k + 1) % number_polygon_edges], upper_y[0][(k + 1) % number_polygon_edges]]
+        for lower_count in range(2):    
+            #draw Kresling polygons for bottom of module, then top of module
+            draw_points_x = tri_points_x[lower_count : lower_count + 3]
+            draw_points_y = tri_points_y[lower_count : lower_count + 3]
+            draw_points_z = tri_points_z[lower_count : lower_count + 3]
 
-                hinge_x = [upper_x[1][k] + upper_x[0][k], lower_x[0][(k + 1) % number_polygon_edges] * (1+ wall_fraction), upper_x[2][(k) % number_polygon_edges] + upper_x[0][(k + 1) % number_polygon_edges]]
-                hinge_y = [upper_y[1][k] + upper_y[0][k], lower_y[0][(k + 1) % number_polygon_edges] * (1+ wall_fraction), upper_y[2][(k) % number_polygon_edges] + upper_y[0][(k + 1) % number_polygon_edges]]
+            outer_kresling = param_Kresling(radius - hinge_thickness, draw_points_x, draw_points_y, draw_points_z)
+            inner_kresling = param_Kresling(radius - wall_thickness, draw_points_x, draw_points_y, draw_points_z)
 
-            middle_kresling = param_Kresling(radius - wall_thickness, points_x, points_y, points_z)
-            inner_kresling = param_Kresling(radius - hinge_thickness - wall_thickness, points_x, points_y, points_z)
+            if hinge_thickness > 0:
+                hinge_kresling_sketch = outer_kresling.parentSketch
+                hinge_loft = create_hinge_extrude(hinge_kresling_sketch, hinge_offset, hinge_thickness, lower_count)
+
+                #Add hinge bodies to list
+                hinge_bodies = hinge_loft.bodies.item(0)
+                body_list.append(hinge_bodies)
+                circular_pattern_bodies.add(hinge_bodies)
             
-            #Loft between Kresling faces, create bodies from loft features
-            inner_loft = add_loft(lofts,[middle_kresling, inner_kresling]) 
-            inner_bodies = inner_loft.bodies.item(0)
-            body_list.append(inner_bodies)
-
-            if wall_thickness > 0: 
-                #Loft between Kresling faces, create bodies from loft features
-                outer_kresling = param_Kresling(radius - wall_thickness, hinge_x, hinge_y, points_z)
-                outer_loft = add_loft(lofts,[middle_kresling, outer_kresling]) 
+            if hinge_thickness < wall_thickness:
+                #Loft between interior and exterior Kresling faces, create bodies from loft features
+                outer_loft = add_loft(lofts,[outer_kresling, inner_kresling]) 
                 outer_bodies = outer_loft.bodies.item(0)
                 body_list.append(outer_bodies)
-
+                circular_pattern_bodies.add(outer_bodies)
+            
             if chamber_length > 0:
-                outer_center_kresling = param_Kresling((radius - chamber_length), points_x, points_y, points_z)
-                inner_center_kresling = param_Kresling((radius - chamber_length) - hinge_thickness, points_x, points_y, points_z)
-                  
+                outer_center_kresling = param_Kresling((radius - chamber_length), draw_points_x, draw_points_y, draw_points_z)
+                inner_center_kresling = param_Kresling((radius - chamber_length) - hinge_thickness, draw_points_x, draw_points_y, draw_points_z)
+
+                #Generate center Kresling walls
                 center_loft = add_loft(lofts,[inner_center_kresling, outer_center_kresling])
                 center_bodies = center_loft.bodies.item(0)
                 body_list.append(center_bodies)
+                circular_pattern_bodies.add(center_bodies)
+            
+            #### Base, lip, and collar body generation
+
+            base_points_x = tri_points_x[0::2]
+            base_points_y = tri_points_y[0::2]
+            base_points_x.append(0)
+            base_points_y.append(0)
+            
+            if lower_count == 0 and base_thickness > 0 and gen_symmetric_collars == False:
+                base_points_x = tri_points_x[0::2]
+                base_points_y = tri_points_y[0::2]
+                base_points_x.append(0)
+                base_points_y.append(0)
+                base_body = make_base(base_points_x, base_points_y, radius, 0, -1 * wall_thickness, lofts, body_list)
+                circular_pattern_bodies.add(base_body)
+            
+            if collar_height <= 0:
+                #Generate lid at the Kresling height if there is no collar
+                lid_height = height
+            elif lower_count == 0:
+                #Make collar if collar height > 0
+                collar_points_x = tri_points_x[1::2]
+                collar_points_y = tri_points_y[1::2]
+                collar_body = make_collar(collar_points_x, collar_points_y, radius, height, wall_thickness, collar_height, collar_ratio, collar_thickness, gen_collar_holes, lofts, body_list)
+                circular_pattern_bodies.add(collar_body)
+
+                #Make mirrored collar
+                if lower_count == 0 and gen_symmetric_collars:
+                    #Mirror plane
+                    collar_mirror_plane = construct_offset_plane(rootComp.xYConstructionPlane, height/2)
+                    #Mirror collar body
+                    collar_mirror_bodies = adsk.core.ObjectCollection.create()
+                    collar_mirror_bodies.add(collar_body)
+                    #Rotate mirrored collar body by top rotation angle
+                    mirrored_collar_body = mirror_bodies(collar_mirror_plane, collar_mirror_bodies).bodies.item(0)
+                    rotate_collar_bodies = adsk.core.ObjectCollection.create()
+                    rotate_collar_bodies.add(mirrored_collar_body)
+                    rotated_collar = rotate_around_z(rotate_collar_bodies, top_rotation_angle)
+                    #Circular pattern the collar body
+                    circular_pattern_bodies.add(mirrored_collar_body)
+                
+                #Generate lid above the collar
+                lid_height = height + collar_height
+
+            if lower_count == 1 and lip_thickness > 0:
+                base_points_x = tri_points_x[1::2]
+                base_points_y = tri_points_y[1::2]
+                base_points_x.append(0)
+                base_points_y.append(0)
+                target_lip = make_base(base_points_x, base_points_y, radius, lid_height, wall_thickness, lofts, body_list)
+                tool_lip = make_base(base_points_x, base_points_y, radius - wall_thickness, lid_height, wall_thickness, lofts, body_list)
+
+                #Cut top out of the Kresling to make a lip
+                cut_combine(target_lip, tool_lip, keep_lid)
+                circular_pattern_bodies.add(target_lip)
+
+                #Make mirrored lip for mirrored collar
+                if gen_symmetric_collars:
+                    lip_mirror_bodies = adsk.core.ObjectCollection.create()
+                    lip_mirror_bodies.add(target_lip)
+                    mirrored_lip_body = mirror_bodies(collar_mirror_plane, lip_mirror_bodies).bodies.item(0)
+                    #Rotate mirrored lip by top rotation angle
+                    rotate_lip_bodies = adsk.core.ObjectCollection.create()
+                    rotate_lip_bodies.add(mirrored_lip_body)
+                    rotated_lip = rotate_around_z(rotate_lip_bodies, top_rotation_angle)
+                    #Circular pattern the lip body
+                    circular_pattern_bodies.add(mirrored_lip_body)
+
+                #Make lid
+                if keep_lid:
+                    circular_pattern_lid = adsk.core.ObjectCollection.create() #create collection to pattern lid
+                    circular_pattern_lid.add(tool_lip)
+
+                    #Circular pattern lid and combine the pieces
+                    patterned_lid = circular_pattern(circular_pattern_lid, number_polygon_edges)
+                    patterned_lid_bodies = adsk.core.ObjectCollection.create()
+                    for item_count in range(patterned_lid.bodies.count - 1): #ignore the original patterned body
+                        patterned_lid_bodies.add(patterned_lid.bodies.item(item_count))
+                    combined_lid = combine_bodies(tool_lip, patterned_lid_bodies)
+                    combined_lid_body = combined_lid.bodies.item(0)
+
+                    #Make mirrored lid for mirrored collar
+                    if gen_symmetric_collars:
+                        lid_mirror_bodies = adsk.core.ObjectCollection.create()
+                        lid_mirror_bodies.add(combined_lid_body)
+                        mirrored_lid_body = mirror_bodies(collar_mirror_plane, lid_mirror_bodies).bodies.item(0)
+                        #Rotate mirrored lid by top rotation angle
+                        rotate_lid_bodies = adsk.core.ObjectCollection.create()
+                        rotate_lid_bodies.add(mirrored_lid_body)
+                        rotated_lid = rotate_around_z(rotate_lid_bodies, top_rotation_angle)
+                        rotated_lid_body = rotated_lid.bodies.item(0)
+
+                        #Add lid to combine list
+                        combined_kresling_bodies.add(rotated_lid_body)
+
+                    #Cut tubing
+                    if tube_OD > 0:
+                        tubing_bodies = createTubing(lid_height, number_polygon_edges, top_rotation_angle, wall_thickness, tube_OD)
+                        #Combine all lid bodies into one
+                        combined_tube_lid = combine_bodies(combined_lid.bodies.item(0), tubing_bodies)
+                        body_list.append(combined_tube_lid.bodies.item(0))
+                    else:
+                        body_list.append(combined_lid.bodies.item(0))
+            
+        #Circular pattern all bodies by the number of Kresling polygon edges
+        patterned_kresling = circular_pattern(circular_pattern_bodies, number_polygon_edges)
+
+        #Combine Kresling
+        for item_count in range(patterned_kresling.bodies.count - 1): #ignore the first body
+            combined_kresling_bodies.add(patterned_kresling.bodies.item(item_count+1))
+        tool_kresling_body = patterned_kresling.bodies.item(0)
+        combined_kresling = combine_bodies(tool_kresling_body, combined_kresling_bodies)
+        combined_kresling_body = combined_kresling.bodies.item(0)
+
+        #Rename Kresling body according to key variables
+        kresling_name = '|' + str(edge_length) + '-EL_' + str(number_polygon_edges) + '-PE_' + str(wall_thickness) + '-WT_' + str(lamb) + '-LA_' + str(height_compressed) + '-HC|' + str(chamber_length) + '-CL|' + str(collar_height) + '-CH_' + str(gen_symmetric_collars) + '-SC|'
+        combined_kresling_body.name = kresling_name
+
+        body_list.append(combined_kresling_body)
+        
+        if chamber_length > 0:
+            circular_chamber_bodies = adsk.core.ObjectCollection.create() #create collection to pattern
+
+            chamber_bodies = make_chambers(lofts, radius - wall_thickness, radius - chamber_length, wall_thickness, tri_points_x, tri_points_y, tri_points_z)
+            
+            for chamberBody in chamber_bodies:
+                circular_chamber_bodies.add(chamberBody.bodies.item(0))
+            circular_chambers = circular_pattern(circular_chamber_bodies, 3)
+
+            body_list.append(circular_chambers)
+
+        return body_list
     
-    if chamber_length > 0:
-            make_chambers(lofts,number_polygon_edges, radius - hinge_thickness - wall_thickness, radius - chamber_length, top_rotation_angle, height, lower_x[0], lower_y[0], upper_x[0], upper_y[0])
-
-    if base_thickness > 0:
-        make_base(lower_x[0], lower_y[0], radius, 0, -base_thickness, lofts, body_list, tube_OD)
-
-    if lip_thickness > 0:
-        make_base(upper_x[0], upper_y[0], radius, height, lip_thickness, lofts, body_list)
-        make_base(upper_x[0], upper_y[0], radius - hinge_thickness - wall_thickness, height, lip_thickness, lofts, body_list)
-       
-    return body_list
+    except:
+        ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
 
 ##### Main code #####
+try:
+    # Create Fusion document 
+    app = adsk.core.Application.get()
+    ui = app.userInterface
+    doc = app.documents.add(adsk.core.DocumentTypes.FusionDesignDocumentType)
+    design = app.activeProduct
 
-# Create Fusion document 
-app = adsk.core.Application.get()
-ui = app.userInterface
-doc = app.documents.add(adsk.core.DocumentTypes.FusionDesignDocumentType)
-design = app.activeProduct
+    # Set up import functions
+    importManager = app.importManager
 
-# Create sketch, construction plane, and loft objects
-rootComp = design.rootComponent
-sketchObjs = rootComp.sketches
-cPlaneObjs = rootComp.constructionPlanes
-loftFeats = rootComp.features.loftFeatures
-extrudeFeats = rootComp.features.extrudeFeatures
+    # Create sketch, construction plane, loft objects, and combine objects
+    rootComp = design.rootComponent
+    sketchObjs = rootComp.sketches
+    cPlaneObjs = rootComp.constructionPlanes
+    loftFeats = rootComp.features.loftFeatures
+    combineFeats = rootComp.features.combineFeatures
+    circlePatternFeats = rootComp.features.circularPatternFeatures
+    extrudeFeats = rootComp.features.extrudeFeatures
+    mirrorFeats = rootComp.features.mirrorFeatures
+    moveFeats = rootComp.features.moveFeatures
 
-# Make Kresling structure
-Kresling = make_Kresling_body(loftFeats, radius, wall_thickness, hinge_thickness, number_polygon_edges, height, top_rotation_angle, base_thickness, lip_thickness, tube_OD)
+    ### Get input parameters from user and generate Kresling ###
+    # Create new command definition (delete old)
+    cmd_def = ui.commandDefinitions.itemById('input_parameters')
+    if cmd_def:
+            cmd_def.deleteMe()
+    cmd_def = ui.commandDefinitions.addButtonDefinition('input_parameters', 'Kresling Input Parameters', 'Input parameters to generate Kresling.')
+
+    # Connect to command created event
+    on_command_created = cmd_creation_handler()
+    cmd_def.commandCreated.add(on_command_created)
+    handlers.append(on_command_created)
+
+    # Execute command definition
+    cmd_def.execute()
+
+    # Prevent module terminimation and wait for event firing
+    adsk.autoTerminate(False)
+except:
+    if ui:
+        ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
