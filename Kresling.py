@@ -113,7 +113,7 @@ class on_execute_handler(adsk.core.CommandEventHandler):
 
             # Make Kresling structure
             Kresling = make_Kresling_body(loftFeats, radius, wall_thickness, hinge_thickness, number_polygon_edges, height, top_rotation_angle, base_thickness, lip_thickness, collar_height)
-
+            
         except:
             ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
 
@@ -193,7 +193,7 @@ class execute_preview_handler(adsk.core.CommandEventHandler):
 
                 #Make Kresling structure
                 Kresling = make_Kresling_body(loftFeats, radius, wall_thickness, hinge_thickness, number_polygon_edges, height, top_rotation_angle, base_thickness, lip_thickness, collar_height)
-
+                ui.messageBox(str(top_rotation_angle))
                 #Do not use normal execute command
                 event_args.isValidResult = True
                 
@@ -831,7 +831,7 @@ def make_Kresling_body(lofts, radius, wall_thickness, hinge_thickness, number_po
             circular_chambers = circular_pattern(circular_chamber_bodies, 3)
 
             body_list.append(circular_chambers)
-
+        
         return body_list
     
     except:
